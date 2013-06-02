@@ -210,13 +210,17 @@ typedef struct tagATTRINFO {
 PDB WINAPI SdbCreateDatabase( LPCWSTR path, PATH_TYPE type );
 PDB WINAPI SdbOpenDatabase( LPCWSTR path, PATH_TYPE type );
 VOID WINAPI SdbCloseDatabase( PDB pdb );
+TAGID WINAPI SdbFindFirstTag( PDB pdb, TAGID tiParent, TAG tTag );
 TAGID WINAPI SdbGetFirstChild( PDB pdb, TAGID tiParent );
 TAGID WINAPI SdbGetNextChild( PDB pdb, TAGID tiParent, TAGID tiPrev );
+TAGID WINAPI SdbFindNextTag( PDB pdb, TAGID tiParent, TAGID tiPrev );
 TAG WINAPI SdbGetTagFromTagID( PDB pdb, TAGID tiWhich );
 HMODULE WINAPI SdbOpenApphelpResourceFile( LPCWSTR pwszACResourceFile );
 LPWSTR WINAPI SdbGetStringTagPtr( PDB pdb, TAGID tiWhich );
+BOOL WINAPI SdbReadStringTag( PDB pdb, TAGID tiWhich, LPWSTR pwszBuffer, DWORD cchBufferSize );
 DWORD WINAPI SdbReadDWORDTag( PDB pdb, TAGID tiWhich, DWORD dwDefault );
 ULONGLONG WINAPI SdbReadQWORDTag( PDB pdb, TAGID tiWhich, ULONGLONG qwDefault );
 DWORD WINAPI SdbGetTagDataSize( PDB pdb, TAGID tiWhich );
 PVOID WINAPI SdbGetBinaryTagData( PDB pdb, TAGID tiWhich );
+BOOL WINAPI SdbFormatAttribute( PATTRINFO pAttrInfo, LPWSTR pchBuffer, DWORD dwBufferSize );
 LPCWSTR WINAPI SdbTagToString( TAG t );
