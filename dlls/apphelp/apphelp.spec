@@ -38,13 +38,14 @@
 @ stub SdbFindFirstMsiPackage_Str
 @ stub SdbFindFirstNamedTag
 @ stub SdbFindFirstStringIndexedTag
-@ stub SdbFindFirstTag
+@ stdcall SdbFindFirstTag(long long long)
 @ stub SdbFindFirstTagRef
 @ stub SdbFindNextDWORDIndexedTag
 @ stub SdbFindNextMsiPackage
 @ stub SdbFindNextStringIndexedTag
-@ stub SdbFindNextTag
+@ stdcall SdbFindNextTag(ptr long long)
 @ stub SdbFindNextTagRef
+@ stdcall SdbFormatAttribute(ptr ptr long)
 @ stub SdbFreeDatabaseInformation
 @ stub SdbFreeFileInfo
 @ stub SdbFreeFlagInfo
@@ -121,7 +122,7 @@
 @ stub SdbReadPatchBits
 @ stdcall SdbReadQWORDTag(ptr long int64)
 @ stub SdbReadQWORDTagRef
-@ stub SdbReadStringTag
+@ stdcall SdbReadStringTag(ptr long ptr long)
 @ stub SdbReadStringTagRef
 @ stub SdbReadWORDTagRef
 @ stub SdbRegisterDatabase

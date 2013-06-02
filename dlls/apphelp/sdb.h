@@ -16,19 +16,31 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-
-/* FIXME: don't know where to place that enum */
 typedef enum _PATH_TYPE {
     DOS_PATH,
     NT_PATH
 } PATH_TYPE;
 
-/* FIXME: don't know where to place that typedef */
 typedef HANDLE PDB;
 typedef WORD   TAG;
 typedef DWORD  TAGID;
 
+
+typedef struct tagATTRINFO {
+    TAG   tAttrID;
+    DWORD dwFlags;
+    union {
+        ULONGLONG  ullAttr;
+        DWORD      dwAttr;
+        //TODO: v check type
+        LPWSTR     lpAttr;
+    };
+} ATTRINFO, *PATTRINFO;
+
 #define TAG_TYPE(x) ((x) & 0xF000)
+
+#define TAGID_NULL 0x0
+#define TAGID_ROOT 0xC
 
 //TAG Types
 #define TAG_TYPE_NULL      0x1000

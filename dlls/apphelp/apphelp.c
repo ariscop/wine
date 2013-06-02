@@ -34,6 +34,7 @@
  **/
 
 #include <stdarg.h>
+#include <stdlib.h>
 #include "windef.h"
 #include "winbase.h"
 #include <appcompatapi.h>
@@ -101,7 +102,7 @@ typedef struct _SdbTag {
 #include "poppack.h"
 
 typedef struct _SdbPrivate {
-    LPVOID *data;
+    char *data;
     HANDLE file;
     DWORD size;
     TAGID stringTable;
@@ -164,16 +165,36 @@ static DWORD tag_size(SdbTag *tag) {
 
 static SdbTag* get_tag(SdbPrivate *sdb, TAGID tagId) {
     SdbTag *ret;
-    char *data = (char*)sdb->data;
+    char *data = sdb->data;
     
     /* Should be 2 byte aligned */
-    if(tagId & 0x1)
+    if(tagId & 0x1) {
+        FIXME("Unaligned tag\n");
         return NULL;
+    }
     
     if((tagId + 2) > sdb->size)
         return NULL;
     
+    if(tagId == TAGID_NULL)
+        tagId = TAGID_ROOT;
+    
     ret = (SdbTag*)(&data[tagId]);
+    
+    return ret;
+}
+
+static TAGID next_tag(SdbPrivate *sdb, TAGID tagId) {
+    SdbTag *tag = get_tag(sdb, tagId);
+    TAGID ret;
+    
+    if(tag == NULL)
+        return TAGID_NULL;
+    
+    ret = tagId + tag_size(tag);
+    
+    if(ret >= sdb->size)
+        return TAGID_NULL;
     
     return ret;
 }
@@ -181,10 +202,8 @@ static SdbTag* get_tag(SdbPrivate *sdb, TAGID tagId) {
 static BOOL parse_tags(SdbPrivate *sdb) {
     char *data = (char*)sdb->data;
     DWORD size = sdb->size;
-    DWORD offset = 0;
-    
     //TODO: check for header
-    offset = 12;
+    DWORD offset = TAGID_ROOT;
     
     while(offset < size) {
         SdbTag *cur = (SdbTag*)(&data[offset]);
@@ -196,16 +215,15 @@ static BOOL parse_tags(SdbPrivate *sdb) {
             ERR("Unknown/Invalid tag at 0x%x\n", offset);
             return FALSE;
         }
-        TRACE("Parsing Tag 0x%x,0x%x:0x%x : %s\n",
+        /* TRACE("Parsing Tag 0x%x,0x%x:0x%x : %s\n",
             offset, tagSize, cur->tag,
-            debugstr_w(SdbTagToString(cur->tag)));
+            debugstr_w(SdbTagToString(cur->tag))); */
         
         switch(cur->tag) {
             case TAG_STRINGTABLE:
                 sdb->stringTable = offset;
                 break;
         }
-        
         if(TAG_TYPE(cur->tag) == TAG_TYPE_LIST)
             tagSize = 6;
         
@@ -262,11 +280,39 @@ VOID WINAPI SdbCloseDatabase( PDB pdb )
     free_sdb(pdb);
 }
 
+TAGID WINAPI SdbFindFirstTag( PDB pdb, TAGID tiParent, TAG tTag )
+{
+    SdbPrivate *sdb = (SdbPrivate*)pdb;
+    TAGID tagId;
+    SdbTag* tag;
+    
+    TRACE("(%p, 0x%x, 0x%x)\n", pdb, tiParent, tTag);
+    
+    if(tiParent == TAGID_NULL)
+        tiParent = TAGID_ROOT;
+    
+    if(tiParent != TAGID_ROOT)
+        tiParent = SdbGetFirstChild(pdb, tiParent);
+    
+    tagId = tiParent;
+    tag = get_tag(sdb, tagId);
+    
+    while(tagId) {
+        if(tag->tag == tTag)
+            return tagId;
+        
+        tagId = next_tag(sdb, tagId);
+        tag = get_tag(sdb, tagId);
+    }
+    
+    return TAGID_NULL;
+}
+
 TAGID WINAPI SdbGetFirstChild( PDB pdb, TAGID tiParent )
 {
     TRACE("(%p, 0x%x)\n", pdb, tiParent);
-    if(tiParent == 0)
-        return 12; //first tag is allways 12 bytes in
+    if(tiParent == TAGID_NULL)
+        return TAGID_ROOT;
     
     return tiParent + 6;
         /* list tags are 6 bytes, first child is immediately after */
@@ -279,25 +325,33 @@ TAGID WINAPI SdbGetNextChild( PDB pdb, TAGID tiParent, TAGID tiPrev )
     SdbTag* parent;
     TAGID tagId = tiPrev;
     
+    TRACE("(%p, 0x%x, 0x%x)\n", pdb, tiParent, tiPrev);
+    
     //TODO: check error conditions on windows
     if(in == NULL)
-        return 0;
+        return TAGID_NULL;
     
     tagId += tag_size(in);
     
     if(tagId >= sdb->size)
-        return 0;
+        return TAGID_NULL;
     
-    if(tiParent == 0)
+    if(tiParent == TAGID_NULL)
         return tagId;
     
     parent = get_tag(sdb, tiParent);
     
     if(tagId >= (tiParent + parent->dword + 6))
-        return 0;
+        return TAGID_NULL;
     
     return tagId;
 
+}
+
+TAGID WINAPI SdbFindNextTag( PDB pdb, TAGID tiParent, TAGID tiPrev )
+{
+    FIXME("(%p, 0x%x, 0x%x) : Stub!, passed to SdbGetNextChild\n", pdb, tiParent, tiPrev);
+    return SdbGetNextChild(pdb, tiParent, tiPrev);
 }
 
 TAG WINAPI SdbGetTagFromTagID( PDB pdb, TAGID tiWhich )
@@ -312,7 +366,7 @@ TAG WINAPI SdbGetTagFromTagID( PDB pdb, TAGID tiWhich )
         return tag->tag;
     
     //TODO: check error conditions on windows
-    return 0;
+    return TAGID_NULL;
 }
 
 HMODULE WINAPI SdbOpenApphelpResourceFile( LPCWSTR pwszACResourceFile )
@@ -322,6 +376,18 @@ HMODULE WINAPI SdbOpenApphelpResourceFile( LPCWSTR pwszACResourceFile )
     return INVALID_HANDLE_VALUE;
 }
 
+SdbTag *get_string_tag(SdbPrivate* sdb, TAGID tagId) {
+    SdbTag *tag = get_tag(sdb, tagId);
+    
+    if(tag && TAG_TYPE(tag->tag) == TAG_TYPE_STRING)
+        return tag;
+    
+    if(tag && TAG_TYPE(tag->tag) == TAG_TYPE_STRINGREF)
+        return get_string_tag(sdb, tag->length + sdb->stringTable);
+    
+    return NULL;
+}
+
 LPWSTR WINAPI SdbGetStringTagPtr( PDB pdb, TAGID tiWhich )
 {
     SdbPrivate *sdb = (SdbPrivate*)pdb;
@@ -329,15 +395,31 @@ LPWSTR WINAPI SdbGetStringTagPtr( PDB pdb, TAGID tiWhich )
     
     TRACE("(%p, 0x%x)\n", pdb, tiWhich);
     
-    tag = get_tag(sdb, tiWhich);
+    tag = get_string_tag(sdb, tiWhich);
     
-    if(tag && TAG_TYPE(tag->tag) == TAG_TYPE_STRING)
-        return (LPWSTR)tag->str.str;
-    
-    if(tag && TAG_TYPE(tag->tag) == TAG_TYPE_STRINGREF)
-        return SdbGetStringTagPtr(pdb, tag->dword + sdb->stringTable);
+    if(tag)
+        return tag->str.str;
     
     return NULL;
+}
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+BOOL WINAPI SdbReadStringTag( PDB pdb, TAGID tiWhich, LPWSTR pwszBuffer, DWORD cchBufferSize )
+{
+    SdbPrivate *sdb = (SdbPrivate*)pdb;
+    SdbTag *tag;
+    
+    TRACE("(%p, 0x%x, %p, %d)\n", pdb, tiWhich, pwszBuffer, cchBufferSize);
+    
+    tag = get_string_tag(sdb, tiWhich);
+    
+    if(tag == NULL)
+        return FALSE;
+    
+    memcpy(pwszBuffer, tag->str.str, MIN(cchBufferSize, tag->length));
+    
+    return TRUE;
 }
 
 //TODO: these tags have a dwDefault flag, i assume it's for unresolvable
@@ -400,8 +482,16 @@ PVOID WINAPI SdbGetBinaryTagData( PDB pdb, TAGID tiWhich )
     if(tag && TAG_TYPE(tag->tag) == TAG_TYPE_BINARY)
         return tag->data.data;
     
-    return 0;
+    return TAGID_NULL;
 }
+
+BOOL WINAPI SdbFormatAttribute( PATTRINFO pAttrInfo, LPWSTR pchBuffer, DWORD dwBufferSize )
+{
+    FIXME("(%p, %p, %d) Stub!\n", pAttrInfo, pchBuffer, dwBufferSize);
+    
+    return FALSE;
+}
+
 
 static const WCHAR str_NULL[] = {'N','U','L','L',0};
 static const WCHAR str_INCLUDE[] = {'I','N','C','L','U','D','E',0};
