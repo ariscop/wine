@@ -397,8 +397,36 @@ NTSTATUS WINAPI NtQueryEvent (
 	IN  ULONG EventInformationLength,
 	OUT PULONG  ReturnLength)
 {
-	FIXME("(%p)\n", EventHandle);
-	return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS ret;
+    PEVENT_BASIC_INFORMATION out;
+
+    if(EventInformationClass != EventBasicInformation) {
+        FIXME("(%p, %d, %d) Unknown EventInformationClass\n",
+                EventHandle,
+                EventInformationClass,
+                EventInformationLength);
+        return STATUS_INVALID_INFO_CLASS;
+    }
+
+    if(EventInformationLength != sizeof(EVENT_BASIC_INFORMATION))
+        return STATUS_INFO_LENGTH_MISMATCH;
+
+    out = (PEVENT_BASIC_INFORMATION)EventInformation;
+
+    SERVER_START_REQ( event_query )
+    {
+        req->handle = EventHandle;
+        ret = wine_server_call( req );
+        if(ret == STATUS_SUCCESS) {
+            out->EventType  = reply->type == 0;
+            out->EventState = reply->state;
+            if(ReturnLength)
+                *ReturnLength = sizeof(EVENT_BASIC_INFORMATION);
+        }
+    }
+    SERVER_END_REQ;
+
+    return ret;
 }
 
 /*

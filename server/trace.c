@@ -1391,6 +1391,17 @@ static void dump_event_op_request( const struct event_op_request *req )
     fprintf( stderr, ", op=%d", req->op );
 }
 
+static void dump_event_query_request( const struct event_query_request *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
+static void dump_event_query_reply( const struct event_query_reply *req )
+{
+    fprintf( stderr, " type=%d", req->type );
+    fprintf( stderr, ", state=%d", req->state );
+}
+
 static void dump_open_event_request( const struct open_event_request *req )
 {
     fprintf( stderr, " access=%08x", req->access );
@@ -4007,6 +4018,7 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_select_request,
     (dump_func)dump_create_event_request,
     (dump_func)dump_event_op_request,
+    (dump_func)dump_event_query_request,
     (dump_func)dump_open_event_request,
     (dump_func)dump_create_mutex_request,
     (dump_func)dump_release_mutex_request,
@@ -4259,6 +4271,7 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_select_reply,
     (dump_func)dump_create_event_reply,
     NULL,
+    (dump_func)dump_event_query_reply,
     (dump_func)dump_open_event_reply,
     (dump_func)dump_create_mutex_reply,
     (dump_func)dump_release_mutex_reply,
@@ -4511,6 +4524,7 @@ static const char * const req_names[REQ_NB_REQUESTS] = {
     "select",
     "create_event",
     "event_op",
+    "event_query",
     "open_event",
     "create_mutex",
     "release_mutex",

@@ -953,6 +953,12 @@ struct rawinput_device
 @END
 enum event_op { PULSE_EVENT, SET_EVENT, RESET_EVENT };
 
+@REQ(event_query)
+    obj_handle_t handle;
+@REPLY
+    int          type;
+    int          state;
+@END
 
 /* Open an event */
 @REQ(open_event)
