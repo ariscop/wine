@@ -133,6 +133,117 @@ static const struct object_ops startup_info_ops =
     startup_info_destroy           /* destroy */
 };
 
+/* job object */
+
+static void job_dump_info( struct object *obj, int verbose );
+static unsigned int job_map_access( struct object *obj, unsigned int access );
+static int job_signaled( struct object *obj, struct thread *thread );
+static void job_destroy( struct object *obj );
+static struct object_type *job_get_type( struct object *obj );
+
+struct job
+{
+    struct object obj;             /* object header */
+    int counter;
+    apc_param_t completion_key;
+    struct completion *completion;
+};
+
+static const struct object_ops job_ops =
+{
+    sizeof(struct job),            /* size */
+    job_dump_info,                 /* dump */
+    job_get_type,                  /* get_type */
+    add_queue,                     /* add_queue */
+    remove_queue,                  /* remove_queue */
+    job_signaled,                  /* signaled */
+    no_satisfied,                  /* satisfied */
+    no_signal,                     /* signal */
+    no_get_fd,                     /* get_fd */
+    job_map_access,                /* map_access */
+    default_get_sd,                /* get_sd */
+    default_set_sd,                /* set_sd */
+    no_lookup_name,                /* lookup_name */
+    no_open_file,                  /* open_file */
+    no_close_handle,               /* close_handle */
+    no_destroy                     /* destroy */
+};
+
+static struct object *create_job_object()
+{
+    struct job *job = (struct job*)alloc_object( &job_ops );
+    
+    job->counter = 0;
+    job->completion_key = 0;
+    job->completion = NULL;
+}
+
+static struct object_type *job_get_type( struct object *obj )
+{
+    static const WCHAR name[] = {'J', 'o', 'b'};
+    static const struct unicode_str str = { name, sizeof(name) };
+    return get_object_type( &str );
+};
+
+static unsigned int job_map_access( struct object *obj, unsigned int access )
+{
+    /* TODO: Access rights */
+/*  if (access & GENERIC_READ)    access |= 
+    if (access & GENERIC_WRITE)   access |= 
+    if (access & GENERIC_EXECUTE) access |= 
+    if (access & GENERIC_ALL)     access |= */
+    access |= JOB_OBJECT_ALL_ACCESS;
+    return access & ~(GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL);
+}
+
+static void job_add_process( struct job *job, struct process *process )
+{
+    //assert( process->ops == &process_ops );
+    //assert( job->ops == &job_ops );
+    
+    grab_object(job);
+    
+    process->job = job;
+    
+    job->counter++;
+}
+
+#define JOB_OBJECT_MSG_EXIT_PROCESS 7
+#define JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO 4
+
+static void job_remove_process( struct process *process )
+{
+    struct job *job = process->job;
+    if(!job)
+        return;
+    
+    job->counter--;
+    
+    unsigned int completion_type = JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO;
+    if(job->counter) /* TODO: check status and information */
+        completion_type = JOB_OBJECT_MSG_EXIT_PROCESS;
+    
+    //fprintf(stderr, "calling add_completion, %d, %d, %d, %d\n", job->completion_key, completion_type, process->exit_code, process->id);
+    add_completion( job->completion, job->completion_key, completion_type, process->exit_code, process->id );
+    
+    release_object(job);
+}
+
+static void job_dump_info( struct object *obj, int verbose )
+{
+    struct job *job = (struct job *)obj;
+    assert( obj->ops == &job_ops );
+
+    fprintf( stderr, "Job processes=%d\n", job->counter );
+}
+
+static int job_signaled( struct object *obj, struct thread *thread )
+{
+    struct job *job = (struct job*)obj;
+    assert( obj->ops == &job_ops );
+    
+    return (job->counter == 0);
+}
 
 struct ptid_entry
 {
@@ -325,6 +436,7 @@ struct thread *create_process( int fd, struct thread *parent_thread, int inherit
     process->debug_children  = 0;
     process->is_terminating  = 0;
     process->console         = NULL;
+    process->job             = NULL;
     process->startup_state   = STARTUP_IN_PROGRESS;
     process->startup_info    = NULL;
     process->idle_event      = NULL;
@@ -430,6 +542,7 @@ static void process_destroy( struct object *obj )
     if (process->idle_event) release_object( process->idle_event );
     if (process->id) free_ptid( process->id );
     if (process->token) release_object( process->token );
+    if (process->job) release_object( process->job );
 }
 
 /* dump a process on stdout for debugging purposes */
@@ -582,6 +695,7 @@ restart:
         kill_thread( thread, 1 );
         goto restart;
     }
+    job_remove_process( process );
     release_object( process );
 }
 
@@ -952,6 +1066,10 @@ DECL_HANDLER(new_process)
     process = thread->process;
     process->debug_children = !!(req->create_flags & DEBUG_PROCESS);
     process->startup_info = (struct startup_info *)grab_object( info );
+    if(parent->job) {
+        process->job = grab_object(parent->job);
+        job_add_process(parent->job, process);
+    }
 
     /* connect to the window station */
     connect_process_winstation( process, current );
@@ -1285,4 +1403,37 @@ DECL_HANDLER(make_process_system)
         if (!--user_processes && !shutdown_stage && master_socket_timeout != TIMEOUT_INFINITE)
             shutdown_timeout = add_timeout_user( master_socket_timeout, server_shutdown_timeout, NULL );
     }
+}
+
+DECL_HANDLER(create_job)
+{
+    struct object *job = create_job_object();
+    reply->handle = alloc_handle( current->process, job, 0, 0);
+    release_object(job);
+}
+
+DECL_HANDLER(job_assign)
+{
+    struct job *job;
+    struct process *process;
+
+    process = get_process_from_handle( req->process_handle, 0 );
+    job = get_handle_obj( current->process, req->job_handle, 0, &job_ops );
+    
+    job_add_process( job, process );
+    
+    release_object(process);
+    release_object(job);
+}
+
+DECL_HANDLER(job_set_completion)
+{
+    struct job *job;
+    
+    job = get_handle_obj( current->process, req->handle, 0, &job_ops );
+    
+    job->completion_key = req->CompletionKey;
+    job->completion = get_completion_obj( current->process, req->CompletionPort, 0 );
+    
+    release_object(job);
 }

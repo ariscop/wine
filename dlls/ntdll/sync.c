@@ -57,6 +57,7 @@
 #include "wine/server.h"
 #include "wine/debug.h"
 #include "ntdll_misc.h"
+#include "winnt.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntdll);
 
@@ -518,7 +519,14 @@ NTSTATUS WINAPI NtQueryMutant(IN HANDLE handle,
 NTSTATUS WINAPI NtCreateJobObject( PHANDLE handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr )
 {
     FIXME( "stub: %p %x %s\n", handle, access, attr ? debugstr_us(attr->ObjectName) : "" );
-    *handle = (HANDLE)0xdead;
+    NTSTATUS    status;
+
+    SERVER_START_REQ( create_job )
+    {
+        status = wine_server_call( req );
+        *handle = wine_server_ptr_handle(reply->handle);
+    }
+    SERVER_END_REQ;
     return STATUS_SUCCESS;
 }
 
@@ -553,13 +561,34 @@ NTSTATUS WINAPI NtQueryInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS c
     return STATUS_NOT_IMPLEMENTED;
 }
 
+typedef struct _JOBOBJECT_ASSOCIATE_COMPLETION_PORT {
+  PVOID  CompletionKey;
+  HANDLE CompletionPort;
+} JOBOBJECT_ASSOCIATE_COMPLETION_PORT, *PJOBOBJECT_ASSOCIATE_COMPLETION_PORT;
+
 /******************************************************************************
  *              NtSetInformationJobObject   [NTDLL.@]
  *              ZwSetInformationJobObject   [NTDLL.@]
  */
 NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS class, PVOID info, ULONG len )
 {
+    PJOBOBJECT_ASSOCIATE_COMPLETION_PORT cInfo;
+    
     FIXME( "stub: %p %u %p %u\n", handle, class, info, len );
+    
+    if(class == JobObjectAssociateCompletionPortInformation)
+    {
+        cInfo = (PJOBOBJECT_ASSOCIATE_COMPLETION_PORT)info;
+        
+        SERVER_START_REQ( job_set_completion )
+        {
+            req->handle = handle;
+            req->CompletionKey = cInfo->CompletionKey;
+            req->CompletionPort = cInfo->CompletionPort;
+            wine_server_call(req);
+        }
+        SERVER_END_REQ;
+    }
     return STATUS_SUCCESS;
 }
 
@@ -580,6 +609,15 @@ NTSTATUS WINAPI NtIsProcessInJob( HANDLE process, HANDLE job )
 NTSTATUS WINAPI NtAssignProcessToJobObject( HANDLE job, HANDLE process )
 {
     FIXME( "stub: %p %p\n", job, process );
+    
+    SERVER_START_REQ( job_assign )
+    {
+        req->job_handle = job;
+        req->process_handle = process;
+        wine_server_call(req);
+    }
+    SERVER_END_REQ;
+    
     return STATUS_SUCCESS;
 }
 

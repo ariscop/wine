@@ -107,6 +107,9 @@ static inline void set_reply_data_ptr( void *data, data_size_t size )
 /* ### make_requests begin ### */
 
 DECL_HANDLER(new_process);
+DECL_HANDLER(create_job);
+DECL_HANDLER(job_assign);
+DECL_HANDLER(job_set_completion);
 DECL_HANDLER(get_new_process_info);
 DECL_HANDLER(new_thread);
 DECL_HANDLER(get_startup_info);
@@ -362,6 +365,9 @@ typedef void (*req_handler)( const void *req, void *reply );
 static const req_handler req_handlers[REQ_NB_REQUESTS] =
 {
     (req_handler)req_new_process,
+    (req_handler)req_create_job,
+    (req_handler)req_job_assign,
+    (req_handler)req_job_set_completion,
     (req_handler)req_get_new_process_info,
     (req_handler)req_new_thread,
     (req_handler)req_get_startup_info,
@@ -657,6 +663,16 @@ C_ASSERT( FIELD_OFFSET(struct new_process_reply, phandle) == 16 );
 C_ASSERT( FIELD_OFFSET(struct new_process_reply, tid) == 20 );
 C_ASSERT( FIELD_OFFSET(struct new_process_reply, thandle) == 24 );
 C_ASSERT( sizeof(struct new_process_reply) == 32 );
+C_ASSERT( sizeof(struct create_job_request) == 16 );
+C_ASSERT( FIELD_OFFSET(struct create_job_reply, handle) == 8 );
+C_ASSERT( sizeof(struct create_job_reply) == 16 );
+C_ASSERT( FIELD_OFFSET(struct job_assign_request, job_handle) == 12 );
+C_ASSERT( FIELD_OFFSET(struct job_assign_request, process_handle) == 16 );
+C_ASSERT( sizeof(struct job_assign_request) == 24 );
+C_ASSERT( FIELD_OFFSET(struct job_set_completion_request, handle) == 12 );
+C_ASSERT( FIELD_OFFSET(struct job_set_completion_request, CompletionKey) == 16 );
+C_ASSERT( FIELD_OFFSET(struct job_set_completion_request, CompletionPort) == 20 );
+C_ASSERT( sizeof(struct job_set_completion_request) == 24 );
 C_ASSERT( FIELD_OFFSET(struct get_new_process_info_request, info) == 12 );
 C_ASSERT( sizeof(struct get_new_process_info_request) == 16 );
 C_ASSERT( FIELD_OFFSET(struct get_new_process_info_reply, success) == 8 );

@@ -1078,6 +1078,28 @@ static void dump_new_process_reply( const struct new_process_reply *req )
     fprintf( stderr, ", thandle=%04x", req->thandle );
 }
 
+static void dump_create_job_request( const struct create_job_request *req )
+{
+}
+
+static void dump_create_job_reply( const struct create_job_reply *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
+static void dump_job_assign_request( const struct job_assign_request *req )
+{
+    fprintf( stderr, " job_handle=%04x", req->job_handle );
+    fprintf( stderr, ", process_handle=%04x", req->process_handle );
+}
+
+static void dump_job_set_completion_request( const struct job_set_completion_request *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+    fprintf( stderr, ", CompletionKey=%08x", req->CompletionKey );
+    fprintf( stderr, ", CompletionPort=%08x", req->CompletionPort );
+}
+
 static void dump_get_new_process_info_request( const struct get_new_process_info_request *req )
 {
     fprintf( stderr, " info=%04x", req->info );
@@ -3981,6 +4003,9 @@ static void dump_set_suspend_context_request( const struct set_suspend_context_r
 
 static const dump_func req_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_new_process_request,
+    (dump_func)dump_create_job_request,
+    (dump_func)dump_job_assign_request,
+    (dump_func)dump_job_set_completion_request,
     (dump_func)dump_get_new_process_info_request,
     (dump_func)dump_new_thread_request,
     (dump_func)dump_get_startup_info_request,
@@ -4233,6 +4258,9 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] = {
 
 static const dump_func reply_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_new_process_reply,
+    (dump_func)dump_create_job_reply,
+    NULL,
+    NULL,
     (dump_func)dump_get_new_process_info_reply,
     (dump_func)dump_new_thread_reply,
     (dump_func)dump_get_startup_info_reply,
@@ -4485,6 +4513,9 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] = {
 
 static const char * const req_names[REQ_NB_REQUESTS] = {
     "new_process",
+    "create_job",
+    "job_assign",
+    "job_set_completion",
     "get_new_process_info",
     "new_thread",
     "get_startup_info",

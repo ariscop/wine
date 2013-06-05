@@ -660,6 +660,21 @@ struct rawinput_device
     obj_handle_t thandle;        /* thread handle (in the current process) */
 @END
 
+@REQ(create_job)
+@REPLY
+    obj_handle_t handle;
+@END
+
+@REQ(job_assign)
+    obj_handle_t job_handle;
+    obj_handle_t process_handle;
+@END
+
+@REQ(job_set_completion)
+    obj_handle_t handle;
+    unsigned int CompletionKey;
+    unsigned int CompletionPort;
+@END
 
 /* Retrieve information about a newly started process */
 @REQ(get_new_process_info)
