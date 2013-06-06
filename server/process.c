@@ -140,6 +140,8 @@ static unsigned int job_map_access( struct object *obj, unsigned int access );
 static int job_signaled( struct object *obj, struct thread *thread );
 static void job_destroy( struct object *obj );
 static struct object_type *job_get_type( struct object *obj );
+static struct job *get_job_from_handle( struct process *process, obj_handle_t handle, unsigned int access );
+static struct job *create_job_object(void);
 
 struct job
 {
@@ -169,13 +171,20 @@ static const struct object_ops job_ops =
     job_destroy                    /* destroy */
 };
 
-static struct object *create_job_object()
+static struct job *create_job_object(void)
 {
     struct job *job = (struct job*)alloc_object( &job_ops );
     
     job->counter = 0;
     job->completion_key = 0;
     job->completion = NULL;
+    
+    return job;
+}
+
+static struct job *get_job_from_handle( struct process *process, obj_handle_t handle, unsigned int access )
+{
+    return (struct job*)get_handle_obj( process, handle, access, &job_ops );
 }
 
 static struct object_type *job_get_type( struct object *obj )
@@ -220,6 +229,7 @@ static void job_destroy( struct object *obj )
 static void job_remove_process( struct process *process )
 {
     struct job *job = process->job;
+    unsigned int completion_type;
     
     if(!job)
         return;
@@ -228,9 +238,10 @@ static void job_remove_process( struct process *process )
     
     job->counter--;
     
-    unsigned int completion_type = JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO;
     if(job->counter) /* TODO: check status and information */
         completion_type = JOB_OBJECT_MSG_EXIT_PROCESS;
+    else
+        completion_type = JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO;
     
     //fprintf(stderr, "calling add_completion, %d, %d, %d, %d\n", job->completion_key, completion_type, process->exit_code, process->id);
     add_completion( job->completion, job->completion_key, completion_type, completion_type, completion_type); //process->exit_code, process->id );
@@ -1079,7 +1090,7 @@ DECL_HANDLER(new_process)
     process->debug_children = !!(req->create_flags & DEBUG_PROCESS);
     process->startup_info = (struct startup_info *)grab_object( info );
     if(parent->job) {
-        process->job = grab_object(parent->job);
+        process->job = (struct job*)grab_object(parent->job);
         job_add_process(parent->job, process);
     }
 
@@ -1419,9 +1430,14 @@ DECL_HANDLER(make_process_system)
 
 DECL_HANDLER(create_job)
 {
-    struct object *job = create_job_object();
-    reply->handle = alloc_handle( current->process, job, 0, 0);
-    release_object(job);
+    struct object *job;
+    
+    if(!(job = (struct object*)create_job_object()))
+        reply->handle = 0;
+    else {
+        reply->handle = alloc_handle( current->process, job, 0, 0);
+        release_object(job);
+    }
 }
 
 DECL_HANDLER(job_assign)
@@ -1429,8 +1445,13 @@ DECL_HANDLER(job_assign)
     struct job *job;
     struct process *process;
 
-    process = get_process_from_handle( req->process_handle, 0 );
-    job = get_handle_obj( current->process, req->job_handle, 0, &job_ops );
+    if(!(job = get_job_from_handle( current->process, req->job_handle, JOB_OBJECT_ASSIGN_PROCESS )))
+        return;
+    
+    if(!(process = get_process_from_handle( req->process_handle, PROCESS_SET_QUOTA|PROCESS_TERMINATE ))) {
+        release_object(job);
+        return;
+    }
     
     job_add_process( job, process );
     
@@ -1441,11 +1462,18 @@ DECL_HANDLER(job_assign)
 DECL_HANDLER(job_set_completion)
 {
     struct job *job;
+    struct completion *completion;
     
-    job = get_handle_obj( current->process, req->handle, 0, &job_ops );
+    if(!(job = get_job_from_handle( current->process, req->handle, JOB_OBJECT_ASSIGN_PROCESS )))
+        return;
+    
+    if(!(completion = get_completion_obj( current->process, req->CompletionPort, JOB_OBJECT_SET_ATTRIBUTES ))) {
+        release_object(job);
+        return;
+    }
     
     job->completion_key = req->CompletionKey;
-    job->completion = get_completion_obj( current->process, req->CompletionPort, 0 );
-    
+    job->completion = completion;
+
     release_object(job);
 }

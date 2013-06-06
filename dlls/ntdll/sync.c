@@ -518,16 +518,19 @@ NTSTATUS WINAPI NtQueryMutant(IN HANDLE handle,
  */
 NTSTATUS WINAPI NtCreateJobObject( PHANDLE handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr )
 {
-    FIXME( "stub: %p %x %s\n", handle, access, attr ? debugstr_us(attr->ObjectName) : "" );
-    NTSTATUS    status;
+    NTSTATUS status;
+    
+    FIXME( "(%p, %x, %s): Semi stub\n", handle, access, attr ? debugstr_us(attr->ObjectName) : "" );
 
     SERVER_START_REQ( create_job )
     {
         status = wine_server_call( req );
-        *handle = wine_server_ptr_handle(reply->handle);
+        if(status == STATUS_SUCCESS)
+            *handle = wine_server_ptr_handle(reply->handle);
     }
     SERVER_END_REQ;
-    return STATUS_SUCCESS;
+    
+    return status;
 }
 
 /******************************************************************************
@@ -572,24 +575,33 @@ typedef struct _JOBOBJECT_ASSOCIATE_COMPLETION_PORT {
  */
 NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS class, PVOID info, ULONG len )
 {
+    NTSTATUS status;
     PJOBOBJECT_ASSOCIATE_COMPLETION_PORT cInfo;
     
-    FIXME( "stub: %p %u %p %u\n", handle, class, info, len );
+    TRACE( "(%p, %u, %p, %u)\n", handle, class, info, len );
     
     if(class == JobObjectAssociateCompletionPortInformation)
     {
+        if(len != sizeof(JOBOBJECT_ASSOCIATE_COMPLETION_PORT))
+            return STATUS_INVALID_PARAMETER;
+        
         cInfo = (PJOBOBJECT_ASSOCIATE_COMPLETION_PORT)info;
         
         SERVER_START_REQ( job_set_completion )
         {
-            req->handle = handle;
+            req->handle = wine_server_obj_handle(handle);
             req->CompletionKey = cInfo->CompletionKey;
-            req->CompletionPort = cInfo->CompletionPort;
-            wine_server_call(req);
+            req->CompletionPort = wine_server_obj_handle(cInfo->CompletionPort);
+            status = wine_server_call(req);
         }
         SERVER_END_REQ;
     }
-    return STATUS_SUCCESS;
+    else
+    {
+        status = STATUS_INVALID_INFO_CLASS;
+    }
+    
+    return status;
 }
 
 /******************************************************************************
@@ -608,17 +620,18 @@ NTSTATUS WINAPI NtIsProcessInJob( HANDLE process, HANDLE job )
  */
 NTSTATUS WINAPI NtAssignProcessToJobObject( HANDLE job, HANDLE process )
 {
-    FIXME( "stub: %p %p\n", job, process );
+    NTSTATUS status;
+    TRACE( "stub: %p %p\n", job, process );
     
     SERVER_START_REQ( job_assign )
     {
-        req->job_handle = job;
-        req->process_handle = process;
-        wine_server_call(req);
+        req->job_handle = wine_server_obj_handle(job);
+        req->process_handle = wine_server_obj_handle(process);
+        status = wine_server_call(req);
     }
     SERVER_END_REQ;
     
-    return STATUS_SUCCESS;
+    return status;
 }
 
 /*
