@@ -166,7 +166,7 @@ static const struct object_ops job_ops =
     no_lookup_name,                /* lookup_name */
     no_open_file,                  /* open_file */
     no_close_handle,               /* close_handle */
-    no_destroy                     /* destroy */
+    job_destroy                    /* destroy */
 };
 
 static struct object *create_job_object()
@@ -197,15 +197,21 @@ static unsigned int job_map_access( struct object *obj, unsigned int access )
 }
 
 static void job_add_process( struct job *job, struct process *process )
-{
-    //assert( process->ops == &process_ops );
-    //assert( job->ops == &job_ops );
-    
+{ 
     grab_object(job);
     
     process->job = job;
     
     job->counter++;
+}
+
+static void job_destroy( struct object *obj )
+{
+    struct job *job = (struct job*)obj;
+    assert(obj->ops == &job_ops);
+    
+    if(job->completion)
+        release_object(job->completion);
 }
 
 #define JOB_OBJECT_MSG_EXIT_PROCESS 7
@@ -214,8 +220,11 @@ static void job_add_process( struct job *job, struct process *process )
 static void job_remove_process( struct process *process )
 {
     struct job *job = process->job;
+    
     if(!job)
         return;
+    
+    assert(job->obj.ops == &job_ops);
     
     job->counter--;
     
@@ -224,9 +233,10 @@ static void job_remove_process( struct process *process )
         completion_type = JOB_OBJECT_MSG_EXIT_PROCESS;
     
     //fprintf(stderr, "calling add_completion, %d, %d, %d, %d\n", job->completion_key, completion_type, process->exit_code, process->id);
-    add_completion( job->completion, job->completion_key, completion_type, process->exit_code, process->id );
+    add_completion( job->completion, job->completion_key, completion_type, completion_type, completion_type); //process->exit_code, process->id );
     
     release_object(job);
+    process->job = NULL;
 }
 
 static void job_dump_info( struct object *obj, int verbose )
@@ -535,6 +545,9 @@ static void process_destroy( struct object *obj )
 
     close_process_handles( process );
     set_process_startup_state( process, STARTUP_ABORTED );
+    
+    job_remove_process( process );
+    
     if (process->console) release_object( process->console );
     if (process->parent) release_object( process->parent );
     if (process->msg_fd) release_object( process->msg_fd );
@@ -542,7 +555,6 @@ static void process_destroy( struct object *obj )
     if (process->idle_event) release_object( process->idle_event );
     if (process->id) free_ptid( process->id );
     if (process->token) release_object( process->token );
-    if (process->job) release_object( process->job );
 }
 
 /* dump a process on stdout for debugging purposes */
