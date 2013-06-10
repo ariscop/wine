@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include <windef.h>
+
 typedef enum _PATH_TYPE {
     DOS_PATH,
     NT_PATH
