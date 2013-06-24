@@ -288,13 +288,7 @@ TAGID WINAPI SdbFindFirstTag( PDB pdb, TAGID tiParent, TAG tTag )
     
     TRACE("(%p, 0x%x, 0x%x)\n", pdb, tiParent, tTag);
     
-    if(tiParent == TAGID_NULL)
-        tiParent = TAGID_ROOT;
-    
-    if(tiParent != TAGID_ROOT)
-        tiParent = SdbGetFirstChild(pdb, tiParent);
-    
-    tagId = tiParent;
+    tagId = SdbGetFirstChild(pdb, tiParent);
     tag = get_tag(sdb, tagId);
     
     while(tagId) {
@@ -311,8 +305,12 @@ TAGID WINAPI SdbFindFirstTag( PDB pdb, TAGID tiParent, TAG tTag )
 TAGID WINAPI SdbGetFirstChild( PDB pdb, TAGID tiParent )
 {
     TRACE("(%p, 0x%x)\n", pdb, tiParent);
+
     if(tiParent == TAGID_NULL)
         return TAGID_ROOT;
+    
+    if(TAG_TYPE(SdbGetTagFromTagID(pdb, tiParent)) != TAG_TYPE_LIST)
+        return TAGID_NULL;
     
     return tiParent + 6;
         /* list tags are 6 bytes, first child is immediately after */
@@ -350,8 +348,27 @@ TAGID WINAPI SdbGetNextChild( PDB pdb, TAGID tiParent, TAGID tiPrev )
 
 TAGID WINAPI SdbFindNextTag( PDB pdb, TAGID tiParent, TAGID tiPrev )
 {
-    FIXME("(%p, 0x%x, 0x%x) : Stub!, passed to SdbGetNextChild\n", pdb, tiParent, tiPrev);
-    return SdbGetNextChild(pdb, tiParent, tiPrev);
+    SdbPrivate *sdb = (SdbPrivate*)pdb;
+    TAGID tagId;
+    TAG tTag;
+    SdbTag* tag;
+    
+    TRACE("(%p, 0x%x, 0x%x)\n", pdb, tiParent, tiPrev);
+    
+    tTag = get_tag(sdb, tiPrev)->tag;
+    tagId = SdbGetNextChild(pdb, tiParent, tiPrev);
+    tag = get_tag(sdb, tagId);
+    
+    while(tagId) {
+        if(tag->tag == tTag)
+            return tagId;
+        
+        tagId = next_tag(sdb, tagId);
+        tag = get_tag(sdb, tagId);
+    }
+    
+    return TAGID_NULL;
+
 }
 
 TAG WINAPI SdbGetTagFromTagID( PDB pdb, TAGID tiWhich )
