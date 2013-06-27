@@ -59,7 +59,7 @@
 @ stub SdbGetDatabaseVersion
 @ stub SdbGetDllPath
 @ stub SdbGetEntryFlags
-@ stub SdbGetFileAttributes
+@ stdcall SdbGetFileAttributes(wstr ptr ptr)
 @ stub SdbGetFileImageType
 @ stub SdbGetFileImageTypeEx
 @ stub SdbGetFileInfo

@@ -39,6 +39,9 @@ typedef struct tagATTRINFO {
     };
 } ATTRINFO, *PATTRINFO;
 
+#define ATTRIBUTE_AVAILABLE 0x1
+#define ATTRIBUTE_FAILED 0x2
+
 #define TAG_TYPE(x) ((x) & 0xF000)
 
 #define TAGID_NULL 0x0
@@ -240,4 +243,5 @@ ULONGLONG WINAPI SdbReadQWORDTag( PDB pdb, TAGID tiWhich, ULONGLONG qwDefault );
 DWORD WINAPI SdbGetTagDataSize( PDB pdb, TAGID tiWhich );
 PVOID WINAPI SdbGetBinaryTagData( PDB pdb, TAGID tiWhich );
 BOOL WINAPI SdbFormatAttribute( PATTRINFO pAttrInfo, LPWSTR pchBuffer, DWORD dwBufferSize );
+BOOL WINAPI SdbGetFileAttributes(LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, LPDWORD lpdwAttrCount);
 LPCWSTR WINAPI SdbTagToString( TAG t );

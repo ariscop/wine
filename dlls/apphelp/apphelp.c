@@ -37,11 +37,13 @@
 #include <stdlib.h>
 #include "windef.h"
 #include "winbase.h"
-#include <appcompatapi.h>
-
-#include "wine/debug.h"
+#include "winver.h"
+#include "appcompatapi.h"
 
 #include "sdb.h"
+
+#include "wine/debug.h"
+#include "wine/unicode.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(apphelp);
 
@@ -504,11 +506,100 @@ PVOID WINAPI SdbGetBinaryTagData( PDB pdb, TAGID tiWhich )
 
 BOOL WINAPI SdbFormatAttribute( PATTRINFO pAttrInfo, LPWSTR pchBuffer, DWORD dwBufferSize )
 {
-    FIXME("(%p, %p, %d) Stub!\n", pAttrInfo, pchBuffer, dwBufferSize);
+    LPCWSTR tagName;
+    static const WCHAR strtag_fmt[] = {'%','s','=','"','%','s','"',0};
+    static const WCHAR dwtag_fmt[] = {'%','s','=','"','0','x','%','X','"',0};
+    static const WCHAR qwtag_fmt[] = {'%','s','=','"','0','x','%','l','l','X','"',0};
     
-    return FALSE;
+    //TODO: figure out what other formats there are (version, integer, etc)
+    TRACE("(%p, %p, %d)\n", pAttrInfo, pchBuffer, dwBufferSize);
+    if(!pAttrInfo || pAttrInfo->dwFlags != ATTRIBUTE_AVAILABLE)
+        return FALSE;
+    
+    tagName = SdbTagToString(pAttrInfo->tAttrID);
+    if(!tagName)
+        return FALSE;
+    
+    switch(TAG_TYPE(pAttrInfo->tAttrID)) {
+        case TAG_TYPE_STRING:
+        case TAG_TYPE_STRINGREF:
+            snprintfW(pchBuffer, dwBufferSize, strtag_fmt, tagName, pAttrInfo->lpAttr);
+            break;
+        case TAG_TYPE_DWORD:
+            snprintfW(pchBuffer, dwBufferSize, dwtag_fmt, tagName, pAttrInfo->dwAttr);
+            break;
+        case TAG_TYPE_QWORD:
+            snprintfW(pchBuffer, dwBufferSize, qwtag_fmt, tagName, pAttrInfo->ullAttr);
+            break;
+        default:
+            return FALSE;
+    }
+    
+    return TRUE;
 }
 
+BOOL WINAPI SdbGetFileAttributes(LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, LPDWORD lpdwAttrCount) {
+    HANDLE file;
+    DWORD infoSize;
+    PVOID fileInfo = NULL;
+    PATTRINFO ret;
+    ATTRINFO info[28] = {{0}};
+    
+    FIXME("(%s, %p, %p) Stub!\n", debugstr_w(lpwszFileName), ppAttrInfo, lpdwAttrCount);
+    
+    infoSize = GetFileVersionInfoSizeW(lpwszFileName, NULL);
+    fileInfo = malloc(infoSize);
+    if(!GetFileVersionInfoW(lpwszFileName, 0, infoSize, fileInfo))
+        goto error;
+    
+    file = CreateFileW(lpwszFileName, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, 0);
+    if(file == INVALID_HANDLE_VALUE)
+        goto error;
+    
+    info[ 0] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_SIZE
+    info[ 1] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_CHECKSUM
+    info[ 2] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_BIN_FILE_VERSION
+    info[ 3] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_BIN_PRODUCT_VERSION
+    info[ 4] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_PRODUCT_VERSION
+    info[ 5] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_FILE_DESCRIPTION
+    info[ 6] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_COMPANY_NAME
+    info[ 7] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_PRODUCT_NAME
+    info[ 8] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_FILE_VERSION
+    info[ 9] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_ORIGINAL_FILENAME
+    info[10] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_INTERNAL_NAME
+    info[11] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_LEGAL_COPYRIGHT
+    info[12] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VERDATEHI
+    info[13] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VERDATELO
+    info[14] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VERFILEOS
+    info[15] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VERFILETYPE
+    info[16] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_MODULE_TYPE
+    info[17] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_PE_CHECKSUM
+    info[18] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_LINKER_VERSION
+    info[19] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //*Unknown
+    info[20] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //*Unknown
+    info[21] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_UPTO_BIN_FILE_VERSION
+    info[22] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_UPTO_BIN_PRODUCT_VERSION
+    info[23] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_LINK_DATE
+    info[24] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_UPTO_LINK_DATE
+    info[25] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //*Unknown
+    info[26] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VRE_LANGUAGE
+    info[27] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_EXE_WRAPPER
+    
+    ret = (PATTRINFO)HeapAlloc(GetProcessHeap(), 0, sizeof(ATTRINFO)*28);
+    if(!ret)
+        goto error;
+    
+    memcpy(ret, info, sizeof(ATTRINFO)*28);
+    
+    *ppAttrInfo = ret;
+    *lpdwAttrCount = 28;
+    return TRUE;
+
+error:
+    free(fileInfo);
+    return FALSE;
+
+}
 
 static const WCHAR str_NULL[] = {'N','U','L','L',0};
 static const WCHAR str_INCLUDE[] = {'I','N','C','L','U','D','E',0};
