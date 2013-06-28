@@ -47,6 +47,7 @@
 @ stub SdbFindNextTagRef
 @ stdcall SdbFormatAttribute(ptr ptr long)
 @ stub SdbFreeDatabaseInformation
+@ stdcall SdbFreeFileAttributes(ptr)
 @ stub SdbFreeFileInfo
 @ stub SdbFreeFlagInfo
 @ stub SdbGetAppCompatDataSize

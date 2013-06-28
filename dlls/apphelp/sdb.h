@@ -243,5 +243,6 @@ ULONGLONG WINAPI SdbReadQWORDTag( PDB pdb, TAGID tiWhich, ULONGLONG qwDefault );
 DWORD WINAPI SdbGetTagDataSize( PDB pdb, TAGID tiWhich );
 PVOID WINAPI SdbGetBinaryTagData( PDB pdb, TAGID tiWhich );
 BOOL WINAPI SdbFormatAttribute( PATTRINFO pAttrInfo, LPWSTR pchBuffer, DWORD dwBufferSize );
-BOOL WINAPI SdbGetFileAttributes(LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, LPDWORD lpdwAttrCount);
+BOOL WINAPI SdbGetFileAttributes( LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, LPDWORD lpdwAttrCount );
+BOOL WINAPI SdbFreeFileAttributes( PATTRINFO pFileAttributes );
 LPCWSTR WINAPI SdbTagToString( TAG t );

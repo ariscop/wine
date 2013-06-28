@@ -538,8 +538,9 @@ BOOL WINAPI SdbFormatAttribute( PATTRINFO pAttrInfo, LPWSTR pchBuffer, DWORD dwB
     return TRUE;
 }
 
-BOOL WINAPI SdbGetFileAttributes(LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, LPDWORD lpdwAttrCount) {
-    HANDLE file;
+BOOL WINAPI SdbGetFileAttributes( LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, LPDWORD lpdwAttrCount )
+{
+    HANDLE file = INVALID_HANDLE_VALUE;
     DWORD infoSize;
     PVOID fileInfo = NULL;
     PATTRINFO ret;
@@ -556,7 +557,7 @@ BOOL WINAPI SdbGetFileAttributes(LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, L
     if(file == INVALID_HANDLE_VALUE)
         goto error;
     
-    info[ 0] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_SIZE
+    info[ 0] = (ATTRINFO){tAttrID: TAG_SIZE, dwFlags: 1, {dwAttr: GetFileSize(file, NULL)}}; //TAG_SIZE
     info[ 1] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_CHECKSUM
     info[ 2] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_BIN_FILE_VERSION
     info[ 3] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_BIN_PRODUCT_VERSION
@@ -585,9 +586,13 @@ BOOL WINAPI SdbGetFileAttributes(LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, L
     info[26] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VRE_LANGUAGE
     info[27] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_EXE_WRAPPER
     
-    ret = (PATTRINFO)HeapAlloc(GetProcessHeap(), 0, sizeof(ATTRINFO)*28);
-    if(!ret)
+    ret = (PATTRINFO)malloc(sizeof(ATTRINFO)*28);
+    if(!ret) {
+        CloseHandle(file);
         goto error;
+    }
+    
+    CloseHandle(file);
     
     memcpy(ret, info, sizeof(ATTRINFO)*28);
     
@@ -599,6 +604,12 @@ error:
     free(fileInfo);
     return FALSE;
 
+}
+
+BOOL WINAPI SdbFreeFileAttributes( PATTRINFO pFileAttributes )
+{
+    free(pFileAttributes);
+    return TRUE;
 }
 
 static const WCHAR str_NULL[] = {'N','U','L','L',0};
