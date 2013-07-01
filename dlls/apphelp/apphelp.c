@@ -39,7 +39,7 @@
 #include "winbase.h"
 #include "winver.h"
 #include "appcompatapi.h"
-
+#include "imagehlp.h"
 #include "sdb.h"
 
 #include "wine/debug.h"
@@ -507,11 +507,12 @@ PVOID WINAPI SdbGetBinaryTagData( PDB pdb, TAGID tiWhich )
 BOOL WINAPI SdbFormatAttribute( PATTRINFO pAttrInfo, LPWSTR pchBuffer, DWORD dwBufferSize )
 {
     LPCWSTR tagName;
+    static const WCHAR nultag_fmt[] = {'%','s','=',0};
     static const WCHAR strtag_fmt[] = {'%','s','=','"','%','s','"',0};
+    static const WCHAR sizetag_fmt[] = {'%','s','=','"','%','d','"',0};
     static const WCHAR dwtag_fmt[] = {'%','s','=','"','0','x','%','X','"',0};
-    static const WCHAR qwtag_fmt[] = {'%','s','=','"','0','x','%','l','l','X','"',0};
+    static const WCHAR qwtag_fmt[] = {'%','s','=','"','0','x','%','l','X','"',0};
     
-    //TODO: figure out what other formats there are (version, integer, etc)
     TRACE("(%p, %p, %d)\n", pAttrInfo, pchBuffer, dwBufferSize);
     if(!pAttrInfo || pAttrInfo->dwFlags != ATTRIBUTE_AVAILABLE)
         return FALSE;
@@ -520,79 +521,212 @@ BOOL WINAPI SdbFormatAttribute( PATTRINFO pAttrInfo, LPWSTR pchBuffer, DWORD dwB
     if(!tagName)
         return FALSE;
     
-    switch(TAG_TYPE(pAttrInfo->tAttrID)) {
-        case TAG_TYPE_STRING:
-        case TAG_TYPE_STRINGREF:
-            snprintfW(pchBuffer, dwBufferSize, strtag_fmt, tagName, pAttrInfo->lpAttr);
+    switch(pAttrInfo->tAttrID) {
+        case TAG_SIZE:
+            snprintfW(pchBuffer, dwBufferSize, sizetag_fmt, tagName, pAttrInfo->dwAttr);
             break;
-        case TAG_TYPE_DWORD:
-            snprintfW(pchBuffer, dwBufferSize, dwtag_fmt, tagName, pAttrInfo->dwAttr);
-            break;
-        case TAG_TYPE_QWORD:
-            snprintfW(pchBuffer, dwBufferSize, qwtag_fmt, tagName, pAttrInfo->ullAttr);
-            break;
-        default:
-            return FALSE;
+        //case MODULE_TYPE:
+        //  example: "NONE"
+        //case VER_LANGUAGE:
+        //  example: "Language Neutral [0x4006ce38]"
+        //  break;
+        
+        //case LINK_DATE:
+        //case UPTO_LINK_DATE:
+        //  example: "01/15/2004 17:30:32"
+        //  break;
+        
+        //case BIN_FILE_VERSION:
+        //case BIN_PRODUCT_VERSION:
+        //case UPTO_BIN_FILE_VERSION:
+        //case UPTO_BIN_PRODUCT_VERSION:
+        //  example: "0.1.16390.52792"
+        //  break;
+        
+        default: switch(TAG_TYPE(pAttrInfo->tAttrID)) {
+            case TAG_TYPE_STRINGREF:
+                snprintfW(pchBuffer, dwBufferSize, strtag_fmt, tagName, pAttrInfo->lpAttr);
+                break;
+            case TAG_TYPE_DWORD:
+                snprintfW(pchBuffer, dwBufferSize, dwtag_fmt, tagName, pAttrInfo->dwAttr);
+                break;
+            case TAG_TYPE_QWORD:
+                snprintfW(pchBuffer, dwBufferSize, qwtag_fmt, tagName, pAttrInfo->ullAttr);
+                break;
+            default:
+                snprintfW(pchBuffer, dwBufferSize, nultag_fmt, tagName);
+                return FALSE;
+        }
     }
     
     return TRUE;
 }
 
-BOOL WINAPI SdbGetFileAttributes( LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, LPDWORD lpdwAttrCount )
+static BOOL open_file(LPCWSTR fileName, PHANDLE handle, PHANDLE mappingHandle, PDWORD size, PVOID *mapping)
 {
     HANDLE file = INVALID_HANDLE_VALUE;
+    HANDLE fileMapping = INVALID_HANDLE_VALUE;
+    PVOID fileMap;
+    DWORD fileSize;
+    
+    file = CreateFileW(fileName, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, 0);
+    if(file == INVALID_HANDLE_VALUE)
+        goto error;
+    
+    fileMapping = CreateFileMappingW(file, NULL, PAGE_READONLY, 0, 0, NULL);
+    if(file == INVALID_HANDLE_VALUE)
+        goto error;
+    
+    fileSize = GetFileSize(file, NULL);
+    
+    fileMap = MapViewOfFile(fileMapping, FILE_MAP_READ, 0, 0, fileSize);
+    if(fileMap == NULL)
+        goto error;
+    
+    *handle = file;
+    *mappingHandle = fileMapping;
+    *size = fileSize;
+    *mapping = fileMap;
+    
+    return TRUE;
+
+error:
+    CloseHandle(fileMapping);
+    CloseHandle(file);
+    return FALSE;
+}
+
+static WCHAR *apphelp_strndupW(WCHAR *in, DWORD size)
+{
+    WCHAR *ret = calloc(size+1, 2);
+    memcpy(ret, in, size*2);
+    return ret;
+}
+
+static BOOL get_attribute(WCHAR *translation, PATTRINFO out, TAG tag, const WCHAR *name, PVOID fileInfo)
+{
+    DWORD size = 0;
+    PVOID result = NULL;
+    WCHAR valueName[128] = {0};
+
+    out->dwFlags = ATTRIBUTE_FAILED;
+    if(!fileInfo)
+        return FALSE;
+    
+    snprintfW(valueName, 128, translation, name);
+    if(VerQueryValueW(fileInfo, valueName, (LPVOID*)&result, &size) && size) {
+        out->tAttrID = tag;
+        out->dwFlags = ATTRIBUTE_AVAILABLE;
+        out->lpAttr = apphelp_strndupW(result, size);
+        return TRUE;
+    } else {
+        ERR("Query: \"%s\", len: %d, result\"%s\"\n", debugstr_w(valueName), size, debugstr_w(result));
+        return FALSE;
+    }
+}
+
+
+#define SET_DWATTR(A, B, C) {A.tAttrID = B; A.dwFlags = ATTRIBUTE_AVAILABLE; A.dwAttr = C; }
+
+
+BOOL WINAPI SdbGetFileAttributes( LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, LPDWORD lpdwAttrCount )
+{
+    HANDLE file;
+    HANDLE fileMapping;
+    DWORD fileSize;
+    PVOID fileMap;
     DWORD infoSize;
+    DWORD size;
     PVOID fileInfo = NULL;
+    DWORD headerSum = 0;
+    DWORD checksum = 0;
     PATTRINFO ret;
+    PIMAGE_NT_HEADERS headers;
+    WCHAR translation[128] = {0};
     ATTRINFO info[28] = {{0}};
+    
+    struct LANGANDCODEPAGE {
+        WORD wLanguage;
+        WORD wCodePage;
+    } *langPage;
+    
+    static const WCHAR str_tinfo[] = {'\\','V','a','r','F','i','l','e','I','n','f','o','\\','T','r','a','n','s','l','a','t','i','o','n',0};
+    static const WCHAR str_trans[] = {'\\','S','t','r','i','n','g','F','i','l','e','I','n','f','o','\\','%','0','4','x','%','0','4','x','\\','%','%','s',0};
+    static const WCHAR str_CompanyName[] = {'C','o','m','p','a','n','y','N','a','m','e',0};
+    static const WCHAR str_FileDescription[] = {'F','i','l','e','D','e','s','c','r','i','p','t','i','o','n',0};
+    static const WCHAR str_FileVersion[] = {'F','i','l','e','V','e','r','s','i','o','n',0};
+    static const WCHAR str_InternalName[] = {'I','n','t','e','r','n','a','l','N','a','m','e',0};
+    static const WCHAR str_LegalCopyright[] = {'L','e','g','a','l','C','o','p','y','r','i','g','h','t',0};
+    static const WCHAR str_OriginalFilename[] = {'O','r','i','g','i','n','a','l','F','i','l','e','n','a','m','e',0};
+    static const WCHAR str_ProductName[] = {'P','r','o','d','u','c','t','N','a','m','e',0};
+    static const WCHAR str_ProductVersion[] = {'P','r','o','d','u','c','t','V','e','r','s','i','o','n',0};
+
     
     FIXME("(%s, %p, %p) Stub!\n", debugstr_w(lpwszFileName), ppAttrInfo, lpdwAttrCount);
     
     infoSize = GetFileVersionInfoSizeW(lpwszFileName, NULL);
-    fileInfo = malloc(infoSize);
-    if(!GetFileVersionInfoW(lpwszFileName, 0, infoSize, fileInfo))
-        goto error;
-    
-    file = CreateFileW(lpwszFileName, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, 0);
-    if(file == INVALID_HANDLE_VALUE)
-        goto error;
-    
-    info[ 0] = (ATTRINFO){tAttrID: TAG_SIZE, dwFlags: 1, {dwAttr: GetFileSize(file, NULL)}}; //TAG_SIZE
-    info[ 1] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_CHECKSUM
-    info[ 2] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_BIN_FILE_VERSION
-    info[ 3] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_BIN_PRODUCT_VERSION
-    info[ 4] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_PRODUCT_VERSION
-    info[ 5] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_FILE_DESCRIPTION
-    info[ 6] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_COMPANY_NAME
-    info[ 7] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_PRODUCT_NAME
-    info[ 8] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_FILE_VERSION
-    info[ 9] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_ORIGINAL_FILENAME
-    info[10] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_INTERNAL_NAME
-    info[11] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_LEGAL_COPYRIGHT
-    info[12] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VERDATEHI
-    info[13] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VERDATELO
-    info[14] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VERFILEOS
-    info[15] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VERFILETYPE
-    info[16] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_MODULE_TYPE
-    info[17] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_PE_CHECKSUM
-    info[18] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_LINKER_VERSION
-    info[19] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //*Unknown
-    info[20] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //*Unknown
-    info[21] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_UPTO_BIN_FILE_VERSION
-    info[22] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_UPTO_BIN_PRODUCT_VERSION
-    info[23] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_LINK_DATE
-    info[24] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_UPTO_LINK_DATE
-    info[25] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //*Unknown
-    info[26] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_VRE_LANGUAGE
-    info[27] = (ATTRINFO){tAttrID: 0, dwFlags: 2, {ullAttr: 0}}; //TAG_EXE_WRAPPER
-    
-    ret = (PATTRINFO)malloc(sizeof(ATTRINFO)*28);
-    if(!ret) {
-        CloseHandle(file);
-        goto error;
+    if(infoSize) {
+        //TODO: free fileInfo at some point
+        fileInfo = malloc(infoSize);
+        GetFileVersionInfoW(lpwszFileName, 0, infoSize, fileInfo);
+        VerQueryValueW(fileInfo, str_tinfo, (LPVOID*)&langPage, &size);
+        snprintfW(translation, 128, str_trans, langPage->wLanguage, langPage->wCodePage);
     }
     
+    if(!open_file(lpwszFileName, &file, &fileMapping, &fileSize, &fileMap))
+        goto error;
+    
+    headers = CheckSumMappedFile(fileMap, fileSize, &headerSum, &checksum);
+    
+    //attributes marked with (*) are allways present
+    
+    SET_DWATTR(info[0], TAG_SIZE, GetFileSize(file, NULL)); // (*)
+    info[1].dwFlags = ATTRIBUTE_FAILED; //TAG_CHECKSUM (*)
+    
+    info[2].dwFlags = ATTRIBUTE_FAILED; //TAG_BIN_FILE_VERSION
+    info[3].dwFlags = ATTRIBUTE_FAILED; //TAG_BIN_PRODUCT_VERSION
+    
+    //VersionInfo (strings)
+    get_attribute(translation, &info[ 4], TAG_PRODUCT_VERSION,   str_ProductVersion, fileInfo);
+    get_attribute(translation, &info[ 5], TAG_FILE_DESCRIPTION,  str_FileDescription, fileInfo);
+    get_attribute(translation, &info[ 6], TAG_COMPANY_NAME,      str_CompanyName, fileInfo);
+    get_attribute(translation, &info[ 7], TAG_PRODUCT_NAME,      str_ProductName, fileInfo);
+    get_attribute(translation, &info[ 8], TAG_FILE_VERSION,      str_FileVersion, fileInfo);
+    get_attribute(translation, &info[ 9], TAG_ORIGINAL_FILENAME, str_OriginalFilename, fileInfo);
+    get_attribute(translation, &info[10], TAG_INTERNAL_NAME,     str_InternalName, fileInfo);
+    get_attribute(translation, &info[11], TAG_LEGAL_COPYRIGHT,   str_LegalCopyright, fileInfo);
+    
+    // (dwords)
+    info[12].dwFlags = ATTRIBUTE_FAILED; //TAG_VERDATEHI
+    info[13].dwFlags = ATTRIBUTE_FAILED; //TAG_VERDATELO
+    info[14].dwFlags = ATTRIBUTE_FAILED; //TAG_VERFILEOS
+    info[15].dwFlags = ATTRIBUTE_FAILED; //TAG_VERFILETYPE
+    
+    //TODO: check if it wants the current checksum or the header sum
+    info[16].dwFlags = ATTRIBUTE_FAILED; //TAG_MODULE_TYPE (*)
+    SET_DWATTR(info[17], TAG_PE_CHECKSUM, checksum); // (*)
+    info[18].dwFlags = ATTRIBUTE_FAILED; //TAG_LINKER_VERSION (*)
+
+    info[19].dwFlags = ATTRIBUTE_FAILED; //*Unknown
+    info[20].dwFlags = ATTRIBUTE_FAILED; //*Unknown
+
+    info[21].dwFlags = ATTRIBUTE_FAILED; //TAG_UPTO_BIN_FILE_VERSION
+    info[22].dwFlags = ATTRIBUTE_FAILED; //TAG_UPTO_BIN_PRODUCT_VERSION
+    
+    SET_DWATTR(info[23], TAG_LINK_DATE, headers->FileHeader.TimeDateStamp); // (*)
+    SET_DWATTR(info[24], TAG_UPTO_LINK_DATE, headers->FileHeader.TimeDateStamp); // (*)
+    
+    info[25].dwFlags = ATTRIBUTE_FAILED; //*Unknown
+    info[26].dwFlags = ATTRIBUTE_FAILED; //TAG_VRE_LANGUAGE
+    
+    info[27].dwFlags = ATTRIBUTE_FAILED; //TAG_EXE_WRAPPER (*)
+    
+    UnmapViewOfFile(fileMap);
+    CloseHandle(fileMapping);
     CloseHandle(file);
+    free(fileInfo);
+    
+    ret = (PATTRINFO)malloc(sizeof(ATTRINFO)*28);
     
     memcpy(ret, info, sizeof(ATTRINFO)*28);
     
@@ -601,6 +735,9 @@ BOOL WINAPI SdbGetFileAttributes( LPCWSTR lpwszFileName, PATTRINFO *ppAttrInfo, 
     return TRUE;
 
 error:
+    UnmapViewOfFile(fileMap);
+    CloseHandle(fileMapping);
+    CloseHandle(file);
     free(fileInfo);
     return FALSE;
 
@@ -608,6 +745,10 @@ error:
 
 BOOL WINAPI SdbFreeFileAttributes( PATTRINFO pFileAttributes )
 {
+    int i;
+    for(i = 0; i < 28; i++)
+        if(TAG_TYPE(pFileAttributes[i].tAttrID) == TAG_TYPE_STRINGREF)
+            free(pFileAttributes[i].lpAttr);
     free(pFileAttributes);
     return TRUE;
 }
