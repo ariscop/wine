@@ -205,13 +205,56 @@ static unsigned int job_map_access( struct object *obj, unsigned int access )
     return access & ~(GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL);
 }
 
+#define JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO 4
+#define JOB_OBJECT_MSG_NEW_PROCESS 6
+#define JOB_OBJECT_MSG_EXIT_PROCESS 7
+
 static void job_add_process( struct job *job, struct process *process )
 { 
-    grab_object(job);
+    process->job = (struct job*)grab_object(job);
     
-    process->job = job;
+    if(job->completion)
+        add_completion(
+            job->completion,
+            job->completion_key,
+            get_process_id( process ),
+            1, /* TODO: why is this 1s */
+            JOB_OBJECT_MSG_NEW_PROCESS);
     
     job->counter++;
+}
+
+static void job_remove_process( struct process *process )
+{
+    struct job *job = process->job;
+    
+    if(!job)
+        return;
+    
+    assert(job->obj.ops == &job_ops);
+
+    if(job->completion) {
+        add_completion(
+            job->completion,
+            job->completion_key,
+            get_process_id( process ),
+            1, /* TODO: why is this 1s */
+            JOB_OBJECT_MSG_EXIT_PROCESS
+        );
+        
+        job->counter--;
+        
+        if(job->counter < 1) add_completion(
+            job->completion,
+            job->completion_key,
+            0,
+            1,
+            JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
+        );
+    }
+    
+    release_object(job);
+    process->job = NULL;
 }
 
 static void job_destroy( struct object *obj )
@@ -221,33 +264,6 @@ static void job_destroy( struct object *obj )
     
     if(job->completion)
         release_object(job->completion);
-}
-
-#define JOB_OBJECT_MSG_EXIT_PROCESS 7
-#define JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO 4
-
-static void job_remove_process( struct process *process )
-{
-    struct job *job = process->job;
-    unsigned int completion_type;
-    
-    if(!job)
-        return;
-    
-    assert(job->obj.ops == &job_ops);
-    
-    job->counter--;
-    
-    if(job->counter) /* TODO: check status and information */
-        completion_type = JOB_OBJECT_MSG_EXIT_PROCESS;
-    else
-        completion_type = JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO;
-    
-    //fprintf(stderr, "calling add_completion, %d, %d, %d, %d\n", job->completion_key, completion_type, process->exit_code, process->id);
-    add_completion( job->completion, job->completion_key, completion_type, completion_type, completion_type); //process->exit_code, process->id );
-    
-    release_object(job);
-    process->job = NULL;
 }
 
 static void job_dump_info( struct object *obj, int verbose )
