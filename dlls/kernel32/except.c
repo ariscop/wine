@@ -53,6 +53,8 @@
 #include "wine/unicode.h"
 #include "wine/debug.h"
 
+#include <sys/prctl.h>
+
 WINE_DEFAULT_DEBUG_CHANNEL(seh);
 
 static PTOP_LEVEL_EXCEPTION_FILTER top_filter;
@@ -65,9 +67,28 @@ typedef INT (WINAPI *MessageBoxW_funcptr)(HWND,LPCWSTR,LPCWSTR,UINT);
  */
 void WINAPI RaiseException( DWORD code, DWORD flags, DWORD nbargs, const ULONG_PTR *args )
 {
+    typedef struct _THREADNAME_INFO
+    {
+        DWORD dwType;
+        LPCSTR szName;
+        DWORD dwThreadID;
+        DWORD dwFlags;
+    } THREADNAME_INFO;
+
     EXCEPTION_RECORD record;
+    THREADNAME_INFO *info;
 
     /* Compose an exception record */
+
+    if(code == 0x406d1388 && args) {
+        info = (THREADNAME_INFO*)args;
+        if(info->dwType != 0x1000)
+            FIXME("Unknown dwType: %d\n", info->dwType);
+        else {
+            TRACE("Application setting thread name: \"%s\"\n", info->szName);
+            prctl(PR_SET_NAME,info->szName,0,0,0);
+        }
+    }
 
     record.ExceptionCode    = code;
     record.ExceptionFlags   = flags & EH_NONCONTINUABLE;
