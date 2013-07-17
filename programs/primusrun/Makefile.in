@@ -1,0 +1,6 @@
+MODULE    = primusrun.exe
+APPMODE   = -mwindows -mno-cygwin
+
+C_SRCS = primusrun.c
+
+@MAKE_PROG_RULES@
