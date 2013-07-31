@@ -29,17 +29,16 @@
 
 HMODULE hntdll;
 
-DWORD getProcess(PHANDLE handle) {
+static DWORD getProcess(PHANDLE handle) {
 	STARTUPINFO startup = {};
     PROCESS_INFORMATION info = {};
 
-	if(!CreateProcessA("C:\\windows\\notepad.exe", NULL, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &info))
+	if(!CreateProcessA(NULL, GetCommandLine(), NULL, NULL, FALSE, 0, NULL, NULL, &startup, &info))
 		return 0;
 
 	CloseHandle(info.hThread);
-    if(handle)
-        *handle = info.hProcess;
-    
+    *handle = info.hProcess;
+
 	return info.dwProcessId;
 };
 
@@ -58,12 +57,13 @@ static void test_completion_response(HANDLE IOPort, DWORD eKey, ULONG_PTR eVal, 
     DWORD CompletionKey, ret;
 	ULONG_PTR CompletionValue;
 	LPOVERLAPPED Overlapped;
-    
+
     ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, 0);
     ok(ret, "GetQueuedCompletionStatus failed: %x\n", GetLastError());
-    ok(eKey == CompletionKey &&
-       eVal == CompletionValue &&
-       eOverlap == Overlapped,
+    if(ret)
+        ok(eKey == CompletionKey &&
+            eVal == CompletionValue &&
+            eOverlap == Overlapped,
         "Unexpected completion event: %x, %p, %p\n", CompletionKey, (void*)CompletionValue, (void*)Overlapped);
 }
 
@@ -88,24 +88,24 @@ static void test_completion(void) {
 	Port.CompletionPort = IOPort;
 	ret = pNtSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation,	&Port, sizeof(Port));
 	ok(ret == STATUS_SUCCESS, "NtCreateJobObject failed: %x\n", ret);
-	
+
 	process_1 = getProcess(&hprocess_1);
     ok(process_1, "CreateProcess failed: %x\n", GetLastError());
-    
+
     process_2 = getProcess(&hprocess_2);
     ok(process_2, "CreateProcess failed: %x\n", GetLastError());
-    
+
 	ret = pNtAssignProcessToJobObject(JobObject, hprocess_1);
 	ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject failed: %x\n", ret);
-    
+
 	ret = pNtAssignProcessToJobObject(JobObject, hprocess_2);
 	ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject failed: %x\n", ret);
-	
+
     ok(TerminateProcess(hprocess_1, 1), "TerminateProcess failed: %x\n", GetLastError());
-    ok(TerminateProcess(hprocess_2, 2), "TerminateProcess failed: %x\n", GetLastError());
-    
     Sleep(1000);
-    
+    ok(TerminateProcess(hprocess_2, 2), "TerminateProcess failed: %x\n", GetLastError());
+    Sleep(1000);
+
     test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)process_1);
     test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)process_2);
     test_completion_response(IOPort, 0x7, (ULONG_PTR)JobObject, (LPOVERLAPPED)process_1);
@@ -114,14 +114,33 @@ static void test_completion(void) {
 
 }
 
+static void is_zombie(void)
+{
+    WCHAR val[32] = {0};
+    static const WCHAR envName[] = { 'T','E','S','T',0 };
+    static const WCHAR envVal[] = { 'J','o','b','O','b','j','e','c','t',0 };
+
+    GetEnvironmentVariableW(envName, val, 32);
+
+    if(lstrcmpW(envVal, val) == 0)
+        /* Wait forever, we've been created for a process handle */
+        while(1) Sleep(INFINITE);
+
+    SetEnvironmentVariableW(envName, envVal);
+}
+
+
 START_TEST(job)
 {
-    HMODULE hntdll = GetModuleHandleA("ntdll.dll");
-    
+    HMODULE hntdll;
+
+    is_zombie();
+
+    hntdll = GetModuleHandleA("ntdll.dll");
     pNtCreateJobObject = (void*)GetProcAddress(hntdll, "NtCreateJobObject");
 	pNtSetInformationJobObject = (void*)GetProcAddress(hntdll, "NtSetInformationJobObject");
 	pNtAssignProcessToJobObject = (void*)GetProcAddress(hntdll, "NtAssignProcessToJobObject");
-	//pNtTerminateJobObject = (void*)GetProcAddress(hntdll, "NtTerminateJobObject");
-    
+	/* pNtTerminateJobObject = (void*)GetProcAddress(hntdll, "NtTerminateJobObject"); */
+
     test_completion();
 }
