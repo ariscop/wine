@@ -1,8 +1,7 @@
 /*
  * Unit test suite for event functions
  *
- * Copyright 2005 Robert Shearman
- * Copyright 2005 Vitaliy Margolen
+ * Copyright 2013 Andrew Cook
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -24,6 +23,7 @@
 #include "winnt.h"
 
 static NTSTATUS (WINAPI *pNtCreateEvent) ( PHANDLE, ACCESS_MASK, const POBJECT_ATTRIBUTES, BOOLEAN, BOOLEAN);
+static NTSTATUS (WINAPI *pNtOpenEvent)   ( PHANDLE, ACCESS_MASK, const POBJECT_ATTRIBUTES);
 static NTSTATUS (WINAPI *pNtPulseEvent)  ( HANDLE, PULONG );
 static NTSTATUS (WINAPI *pNtQueryEvent)  ( HANDLE, EVENT_INFORMATION_CLASS, PVOID, ULONG, PULONG );
 static NTSTATUS (WINAPI *pNtClose)       ( HANDLE );
@@ -32,12 +32,12 @@ static VOID     (WINAPI *pRtlInitUnicodeString)( PUNICODE_STRING, LPCWSTR );
 START_TEST(event)
 {
     HANDLE Event;
+    HANDLE Event2;
     NTSTATUS status;
     UNICODE_STRING str;
     OBJECT_ATTRIBUTES attr;
     EVENT_BASIC_INFORMATION info;
     HMODULE hntdll = GetModuleHandleA("ntdll.dll");
-    HMODULE hkernel32 = GetModuleHandleA("kernel32.dll");
     static const WCHAR eventName[] = {'\\','B','a','s','e','N','a','m','e','d','O','b','j','e','c','t','s','\\','t','e','s','t','E','v','e','n','t',0};
 
     if (!hntdll)
@@ -47,6 +47,7 @@ START_TEST(event)
     }
 
     pNtCreateEvent = (void *)GetProcAddress(hntdll, "NtCreateEvent");
+    pNtOpenEvent   = (void *)GetProcAddress(hntdll, "NtOpenEvent");
     pNtQueryEvent  = (void *)GetProcAddress(hntdll, "NtQueryEvent");
     pNtPulseEvent  = (void *)GetProcAddress(hntdll, "NtPulseEvent");
     pNtClose       = (void *)GetProcAddress(hntdll, "NtClose");
@@ -55,15 +56,30 @@ START_TEST(event)
     pRtlInitUnicodeString(&str, eventName);
     InitializeObjectAttributes(&attr, &str, 0, 0, NULL);
 
-    status = pNtCreateEvent(&Event, GENERIC_ALL, &attr, 0, 0);
+    status = pNtCreateEvent(&Event, GENERIC_ALL, &attr, 1, 0);
     ok( status == STATUS_SUCCESS, "NtCreateEvent failed %08x\n", status );
 
-    status = pNtPulseEvent(Event, 0);
+    status = pNtPulseEvent(Event, NULL);
     todo_wine ok( status == STATUS_SUCCESS, "NtPulseEvent failed %08x\n", status );
 
     status = pNtQueryEvent(Event, EventBasicInformation, &info, sizeof(info), NULL);
     todo_wine ok( status == STATUS_SUCCESS, "NtQueryEvent failed %08x\n", status );
+    if( status == STATUS_SUCCESS )
+        ok( info.EventType == 1 && info.EventState == 0,
+            "NtQueryEvent failed, expected 1 1, got %d %d\n", info.EventType, info.EventState );
+
+    status = pNtOpenEvent(&Event2, GENERIC_ALL, &attr);
+    ok( status == STATUS_SUCCESS, "NtOpenEvent failed %08x\n", status );
 
     status = pNtClose(Event);
+    ok( status == STATUS_SUCCESS, "NtClose failed %08x\n", status );
+
+    status = pNtQueryEvent(Event2, EventBasicInformation, &info, sizeof(info), NULL);
+    ok( status == STATUS_SUCCESS, "NtQueryEvent failed %08x\n", status );
+    if( status == STATUS_SUCCESS )
+        ok( info.EventType == 1 && info.EventState == 0,
+            "NtQueryEvent failed, expected 1 1, got %d %d\n", info.EventType, info.EventState );
+
+    status = pNtClose(Event2);
     ok( status == STATUS_SUCCESS, "NtClose failed %08x\n", status );
 }

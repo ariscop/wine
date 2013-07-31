@@ -415,7 +415,7 @@ NTSTATUS WINAPI NtQueryEvent (
 
     SERVER_START_REQ( event_query )
     {
-        req->handle = EventHandle;
+        req->handle = wine_server_obj_handle( EventHandle );
         ret = wine_server_call( req );
         if(ret == STATUS_SUCCESS) {
             out->EventType  = reply->type == 0;
