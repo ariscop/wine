@@ -7,7 +7,6 @@ C_SRCS = \
 	directory.c \
 	env.c \
 	error.c \
-	event.c \
 	exception.c \
 	file.c \
 	generated.c \
