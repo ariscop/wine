@@ -1133,6 +1133,39 @@ struct open_event_reply
 
 
 
+struct create_keyed_event_request
+{
+    struct request_header __header;
+    unsigned int access;
+    unsigned int attributes;
+    /* VARARG(objattr,object_attributes); */
+    char __pad_20[4];
+};
+struct create_keyed_event_reply
+{
+    struct reply_header __header;
+    obj_handle_t handle;
+    char __pad_12[4];
+};
+
+
+struct open_keyed_event_request
+{
+    struct request_header __header;
+    unsigned int access;
+    unsigned int attributes;
+    obj_handle_t rootdir;
+    /* VARARG(name,unicode_str); */
+};
+struct open_keyed_event_reply
+{
+    struct reply_header __header;
+    obj_handle_t handle;
+    char __pad_12[4];
+};
+
+
+
 struct create_mutex_request
 {
     struct request_header __header;
@@ -4764,8 +4797,9 @@ struct add_completion_request
     obj_handle_t  handle;
     apc_param_t   ckey;
     apc_param_t   cvalue;
-    unsigned int  information;
+    apc_param_t   information;
     unsigned int  status;
+    char __pad_44[4];
 };
 struct add_completion_reply
 {
@@ -4784,8 +4818,9 @@ struct remove_completion_reply
     struct reply_header __header;
     apc_param_t   ckey;
     apc_param_t   cvalue;
-    unsigned int  information;
+    apc_param_t   information;
     unsigned int  status;
+    char __pad_36[4];
 };
 
 
@@ -4824,8 +4859,9 @@ struct add_fd_completion_request
     struct request_header __header;
     obj_handle_t   handle;
     apc_param_t    cvalue;
+    apc_param_t    information;
     unsigned int   status;
-    unsigned int   information;
+    char __pad_36[4];
 };
 struct add_fd_completion_reply
 {
@@ -4994,6 +5030,8 @@ enum request
     REQ_event_op,
     REQ_event_query,
     REQ_open_event,
+    REQ_create_keyed_event,
+    REQ_open_keyed_event,
     REQ_create_mutex,
     REQ_release_mutex,
     REQ_open_mutex,
@@ -5251,6 +5289,8 @@ union generic_request
     struct event_op_request event_op_request;
     struct event_query_request event_query_request;
     struct open_event_request open_event_request;
+    struct create_keyed_event_request create_keyed_event_request;
+    struct open_keyed_event_request open_keyed_event_request;
     struct create_mutex_request create_mutex_request;
     struct release_mutex_request release_mutex_request;
     struct open_mutex_request open_mutex_request;
@@ -5506,6 +5546,8 @@ union generic_reply
     struct event_op_reply event_op_reply;
     struct event_query_reply event_query_reply;
     struct open_event_reply open_event_reply;
+    struct create_keyed_event_reply create_keyed_event_reply;
+    struct open_keyed_event_reply open_keyed_event_reply;
     struct create_mutex_reply create_mutex_reply;
     struct release_mutex_reply release_mutex_reply;
     struct open_mutex_reply open_mutex_reply;
@@ -5729,6 +5771,6 @@ union generic_reply
     struct set_suspend_context_reply set_suspend_context_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 441
+#define SERVER_PROTOCOL_VERSION 443
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

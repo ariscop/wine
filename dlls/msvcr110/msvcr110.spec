@@ -1544,7 +1544,7 @@
 @ stub _mbsspnp_l
 @ cdecl _mbsstr(str str) msvcrt._mbsstr
 @ stub _mbsstr_l
-@ cdecl _mbstok(str str) msvcrt._mbstok
+@ cdecl _mbstok(str str) msvcr100._mbstok #don't forward to msvcrt
 @ cdecl _mbstok_l(str str ptr) msvcrt._mbstok_l
 @ cdecl _mbstok_s(str str ptr) msvcrt._mbstok_s
 @ cdecl _mbstok_s_l(str str ptr ptr) msvcrt._mbstok_s_l
@@ -1566,7 +1566,7 @@
 @ cdecl _mkgmtime32(ptr) msvcrt._mkgmtime32
 @ cdecl _mkgmtime64(ptr) msvcrt._mkgmtime64
 @ cdecl _mktemp(str) msvcrt._mktemp
-@ stub _mktemp_s
+@ cdecl _mktemp_s(str long) msvcrt._mktemp_s
 @ cdecl _mktime32(ptr) msvcrt._mktime32
 @ cdecl _mktime64(ptr) msvcrt._mktime64
 @ cdecl _msize(ptr) msvcrt._msize
@@ -1733,7 +1733,7 @@
 @ stub _swprintf_c_l
 @ stub _swprintf_p
 @ varargs _swprintf_p_l(ptr long wstr ptr) msvcrt._swprintf_p_l
-@ stub _swprintf_s_l
+@ varargs _swprintf_s_l(ptr long wstr ptr) msvcrt._swprintf_s_l
 @ varargs _swscanf_l(wstr wstr ptr) msvcrt._swscanf_l
 @ varargs _swscanf_s_l(wstr wstr ptr) msvcrt._swscanf_s_l
 @ extern _sys_errlist msvcrt._sys_errlist
@@ -1847,7 +1847,7 @@
 @ cdecl _wcserror_s(ptr long long) msvcrt._wcserror_s
 @ stub _wcsftime_l
 @ cdecl _wcsicmp(wstr wstr) msvcrt._wcsicmp
-@ stub _wcsicmp_l
+@ cdecl _wcsicmp_l(wstr wstr ptr) msvcrt._wcsicmp_l
 @ cdecl _wcsicoll(wstr wstr) msvcrt._wcsicoll
 @ cdecl _wcsicoll_l(wstr wstr ptr) msvcrt._wcsicoll_l
 @ cdecl _wcslwr(wstr) msvcrt._wcslwr
@@ -1868,7 +1868,7 @@
 @ cdecl _wcstod_l(wstr ptr) msvcrt._wcstod_l
 @ cdecl -ret64 _wcstoi64(wstr ptr long) msvcrt._wcstoi64
 @ cdecl -ret64 _wcstoi64_l(wstr ptr long ptr) msvcrt._wcstoi64_l
-@ stub _wcstol_l
+@ cdecl _wcstol_l(wstr ptr long ptr) msvcrt._wcstol_l
 @ cdecl _wcstombs_l(ptr ptr long ptr) msvcrt._wcstombs_l
 @ cdecl _wcstombs_s_l(ptr ptr long wstr long ptr) msvcrt._wcstombs_s_l
 @ cdecl -ret64 _wcstoui64(wstr ptr long) msvcrt._wcstoui64
@@ -1883,8 +1883,8 @@
 @ stub _wctime32_s
 @ cdecl _wctime64(ptr) msvcrt._wctime64
 @ stub _wctime64_s
-@ stub _wctomb_l
-@ stub _wctomb_s_l
+@ cdecl _wctomb_l(ptr long ptr) msvcrt._wctomb_l
+@ cdecl _wctomb_s_l(ptr ptr long long ptr) msvcrt._wctomb_s_l
 # extern _wctype
 @ cdecl _wdupenv_s(ptr ptr wstr) msvcrt._wdupenv_s
 @ extern _wenviron msvcrt._wenviron
@@ -1919,7 +1919,7 @@
 @ cdecl _wmakepath_s(ptr long wstr wstr wstr wstr) msvcrt._wmakepath_s
 @ cdecl _wmkdir(wstr) msvcrt._wmkdir
 @ cdecl _wmktemp(wstr) msvcrt._wmktemp
-@ stub _wmktemp_s
+@ cdecl _wmktemp_s(wstr long) msvcrt._wmktemp_s
 @ varargs _wopen(wstr long) msvcrt._wopen
 @ cdecl _wperror(wstr) msvcrt._wperror
 @ extern _wpgmptr msvcrt._wpgmptr
@@ -1991,7 +1991,7 @@
 @ cdecl -arch=arm,x86_64 atan2f(float float) msvcrt.atan2f
 @ cdecl atexit(ptr) msvcrt.atexit
 @ cdecl atof(str) msvcrt.atof
-@ cdecl atoi(str) msvcrt.atoi
+@ cdecl atoi(str) msvcr100.atoi #don't forward to msvcrt
 @ cdecl atol(str) msvcrt.atol
 @ cdecl bsearch(ptr ptr long long ptr) msvcrt.bsearch
 @ cdecl bsearch_s(ptr ptr long long ptr ptr) msvcrt.bsearch_s
@@ -2240,7 +2240,7 @@
 @ cdecl wcsxfrm(ptr wstr long) msvcrt.wcsxfrm
 @ cdecl wctob(long) msvcrt.wctob
 @ cdecl wctomb(ptr long) msvcrt.wctomb
-@ stub wctomb_s
+@ cdecl wctomb_s(ptr ptr long long) msvcrt.wctomb_s
 @ cdecl wmemcpy_s(ptr long ptr long) msvcr100.wmemcpy_s
 @ cdecl wmemmove_s(ptr long ptr long) msvcr100.wmemmove_s
 @ varargs wprintf(wstr) msvcrt.wprintf

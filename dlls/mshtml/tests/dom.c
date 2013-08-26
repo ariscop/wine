@@ -935,6 +935,17 @@ static IHTMLButtonElement *_get_button_iface(unsigned line, IUnknown *unk)
     return ret;
 }
 
+#define get_label_iface(u) _get_label_iface(__LINE__,u)
+static IHTMLLabelElement *_get_label_iface(unsigned line, IUnknown *unk)
+{
+    IHTMLLabelElement *ret;
+    HRESULT hres;
+
+    hres = IUnknown_QueryInterface(unk, &IID_IHTMLLabelElement, (void**)&ret);
+    ok_(__FILE__,line) (hres == S_OK, "Could not get IHTMLLabelElement: %08x\n", hres);
+    return ret;
+}
+
 #define test_node_name(u,n) _test_node_name(__LINE__,u,n)
 static void _test_node_name(unsigned line, IUnknown *unk, const char *exname)
 {
@@ -5513,11 +5524,67 @@ static void test_tr_elem(IHTMLElement *elem)
     IHTMLTableRow_Release(row);
 }
 
+static void test_label_elem(IHTMLElement *elem)
+{
+    IHTMLLabelElement *label;
+    BSTR str;
+    HRESULT hres;
+
+    label = get_label_iface((IUnknown*)elem);
+
+    str = NULL;
+    hres = IHTMLLabelElement_get_htmlFor(label, &str);
+    ok(hres == S_OK, "get_htmlFor failed: %08x\n", hres);
+    ok(!strcmp_wa(str, "in"), "htmlFor = %s\n", wine_dbgstr_w(str));
+    SysFreeString(str);
+
+    str = a2bstr("");
+    hres = IHTMLLabelElement_put_htmlFor(label, str);
+    ok(hres == S_OK, "put_htmlFor failed: %08x\n", hres);
+    SysFreeString(str);
+
+    str = (void*)0xdeadbeef;
+    hres = IHTMLLabelElement_get_htmlFor(label, &str);
+    ok(hres == S_OK, "get_htmlFor failed: %08x\n", hres);
+    ok(!strcmp_wa(str, ""), "htmlFor = %s\n", wine_dbgstr_w(str));
+
+    str = a2bstr("abc");
+    hres = IHTMLLabelElement_put_htmlFor(label, str);
+    ok(hres == S_OK, "put_htmlFor failed: %08x\n", hres);
+    SysFreeString(str);
+
+    str = NULL;
+    hres = IHTMLLabelElement_get_htmlFor(label, &str);
+    ok(hres == S_OK, "get_htmlFor failed: %08x\n", hres);
+    ok(!strcmp_wa(str, "abc"), "htmlFor = %s\n", wine_dbgstr_w(str));
+    SysFreeString(str);
+
+    IHTMLLabelElement_Release(label);
+}
+
+#define test_table_cell_spacing(a,b) _test_table_cell_spacing(__LINE__,a,b)
+static void _test_table_cell_spacing(unsigned line, IHTMLTable *table, const char *exstr)
+{
+    VARIANT v;
+    HRESULT hres;
+
+    V_VT(&v) = VT_ERROR;
+    hres = IHTMLTable_get_cellSpacing(table, &v);
+    ok_(__FILE__,line)(hres == S_OK, "get_cellSpacing failed: %08x\n", hres);
+    ok_(__FILE__,line)(V_VT(&v) == VT_BSTR, "V_VT(v) = %d\n", V_VT(&v));
+    if(exstr)
+        ok_(__FILE__,line)(!strcmp_wa(V_BSTR(&v), exstr), "cellSpacing = %s, expected %s\n", wine_dbgstr_w(V_BSTR(&v)), exstr);
+    else
+        ok_(__FILE__,line)(!V_BSTR(&v), "cellSpacing = %s, expected NULL\n", wine_dbgstr_w(V_BSTR(&v)));
+    VariantClear(&v);
+}
+
 static void test_table_elem(IHTMLElement *elem)
 {
     IHTMLElementCollection *col;
     IHTMLTable *table;
     IHTMLDOMNode *node;
+    VARIANT v;
     HRESULT hres;
 
     static const elem_type_t row_types[] = {ET_TR,ET_TR};
@@ -5556,6 +5623,21 @@ static void test_table_elem(IHTMLElement *elem)
 
     test_elem_collection((IUnknown*)col, tbodies_types, sizeof(tbodies_types)/sizeof(*tbodies_types));
     IHTMLElementCollection_Release(col);
+
+    test_table_cell_spacing(table, NULL);
+
+    V_VT(&v) = VT_I4;
+    V_I4(&v) = 10;
+    hres = IHTMLTable_put_cellSpacing(table, v);
+    ok(hres == S_OK, "put_cellSpacing = %08x\n", hres);
+    test_table_cell_spacing(table, "10");
+
+    V_VT(&v) = VT_BSTR;
+    V_BSTR(&v) = a2bstr("11");
+    hres = IHTMLTable_put_cellSpacing(table, v);
+    ok(hres == S_OK, "put_cellSpacing = %08x\n", hres);
+    test_table_cell_spacing(table, "11");
+    VariantClear(&v);
 
     IHTMLTable_Release(table);
 }
@@ -5805,6 +5887,8 @@ static void test_stylesheet(IDispatch *disp)
     IHTMLStyleSheetRulesCollection *col = NULL;
     IHTMLStyleSheet *stylesheet;
     HRESULT hres;
+
+    test_disp2((IUnknown*)disp, &DIID_DispHTMLStyleSheet, &IID_IHTMLStyleSheet, "[object]");
 
     hres = IDispatch_QueryInterface(disp, &IID_IHTMLStyleSheet, (void**)&stylesheet);
     ok(hres == S_OK, "Could not get IHTMLStyleSheet: %08x\n", hres);
@@ -6230,6 +6314,13 @@ static void test_elems(IHTMLDocument2 *doc)
     ok(elem != NULL, "elem == NULL\n");
     if(elem) {
         test_table_elem(elem);
+        IHTMLElement_Release(elem);
+    }
+
+    elem = get_doc_elem_by_id(doc, "labelid");
+    ok(elem != NULL, "elem == NULL\n");
+    if(elem) {
+        test_label_elem(elem);
         IHTMLElement_Release(elem);
     }
 

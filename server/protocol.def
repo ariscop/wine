@@ -971,6 +971,26 @@ enum event_op { PULSE_EVENT, SET_EVENT, RESET_EVENT };
 @END
 
 
+/* Create a keyed event */
+@REQ(create_keyed_event)
+    unsigned int access;        /* wanted access rights */
+    unsigned int attributes;    /* object attributes */
+    VARARG(objattr,object_attributes); /* object attributes */
+@REPLY
+    obj_handle_t handle;        /* handle to the event */
+@END
+
+/* Open a keyed event */
+@REQ(open_keyed_event)
+    unsigned int access;        /* wanted access rights */
+    unsigned int attributes;    /* object attributes */
+    obj_handle_t rootdir;       /* root directory */
+    VARARG(name,unicode_str);   /* object name */
+@REPLY
+    obj_handle_t handle;        /* handle to the event */
+@END
+
+
 /* Create a mutex */
 @REQ(create_mutex)
     unsigned int access;        /* wanted access rights */
@@ -3312,7 +3332,7 @@ enum coords_relative
     obj_handle_t  handle;         /* port handle */
     apc_param_t   ckey;           /* completion key */
     apc_param_t   cvalue;         /* completion value */
-    unsigned int  information;    /* IO_STATUS_BLOCK Information */
+    apc_param_t   information;    /* IO_STATUS_BLOCK Information */
     unsigned int  status;         /* completion result */
 @END
 
@@ -3323,7 +3343,7 @@ enum coords_relative
 @REPLY
     apc_param_t   ckey;           /* completion key */
     apc_param_t   cvalue;         /* completion value */
-    unsigned int  information;    /* IO_STATUS_BLOCK Information */
+    apc_param_t   information;    /* IO_STATUS_BLOCK Information */
     unsigned int  status;         /* completion result */
 @END
 
@@ -3348,8 +3368,8 @@ enum coords_relative
 @REQ(add_fd_completion)
     obj_handle_t   handle;        /* async' object */
     apc_param_t    cvalue;        /* completion value */
+    apc_param_t    information;   /* IO_STATUS_BLOCK Information */
     unsigned int   status;        /* completion status */
-    unsigned int   information;   /* IO_STATUS_BLOCK Information */
 @END
 
 

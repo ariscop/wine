@@ -135,6 +135,8 @@ DECL_HANDLER(create_event);
 DECL_HANDLER(event_op);
 DECL_HANDLER(event_query);
 DECL_HANDLER(open_event);
+DECL_HANDLER(create_keyed_event);
+DECL_HANDLER(open_keyed_event);
 DECL_HANDLER(create_mutex);
 DECL_HANDLER(release_mutex);
 DECL_HANDLER(open_mutex);
@@ -391,6 +393,8 @@ static const req_handler req_handlers[REQ_NB_REQUESTS] =
     (req_handler)req_event_op,
     (req_handler)req_event_query,
     (req_handler)req_open_event,
+    (req_handler)req_create_keyed_event,
+    (req_handler)req_open_keyed_event,
     (req_handler)req_create_mutex,
     (req_handler)req_release_mutex,
     (req_handler)req_open_mutex,
@@ -841,6 +845,17 @@ C_ASSERT( FIELD_OFFSET(struct open_event_request, rootdir) == 20 );
 C_ASSERT( sizeof(struct open_event_request) == 24 );
 C_ASSERT( FIELD_OFFSET(struct open_event_reply, handle) == 8 );
 C_ASSERT( sizeof(struct open_event_reply) == 16 );
+C_ASSERT( FIELD_OFFSET(struct create_keyed_event_request, access) == 12 );
+C_ASSERT( FIELD_OFFSET(struct create_keyed_event_request, attributes) == 16 );
+C_ASSERT( sizeof(struct create_keyed_event_request) == 24 );
+C_ASSERT( FIELD_OFFSET(struct create_keyed_event_reply, handle) == 8 );
+C_ASSERT( sizeof(struct create_keyed_event_reply) == 16 );
+C_ASSERT( FIELD_OFFSET(struct open_keyed_event_request, access) == 12 );
+C_ASSERT( FIELD_OFFSET(struct open_keyed_event_request, attributes) == 16 );
+C_ASSERT( FIELD_OFFSET(struct open_keyed_event_request, rootdir) == 20 );
+C_ASSERT( sizeof(struct open_keyed_event_request) == 24 );
+C_ASSERT( FIELD_OFFSET(struct open_keyed_event_reply, handle) == 8 );
+C_ASSERT( sizeof(struct open_keyed_event_reply) == 16 );
 C_ASSERT( FIELD_OFFSET(struct create_mutex_request, access) == 12 );
 C_ASSERT( FIELD_OFFSET(struct create_mutex_request, attributes) == 16 );
 C_ASSERT( FIELD_OFFSET(struct create_mutex_request, owned) == 20 );
@@ -2100,15 +2115,15 @@ C_ASSERT( FIELD_OFFSET(struct add_completion_request, handle) == 12 );
 C_ASSERT( FIELD_OFFSET(struct add_completion_request, ckey) == 16 );
 C_ASSERT( FIELD_OFFSET(struct add_completion_request, cvalue) == 24 );
 C_ASSERT( FIELD_OFFSET(struct add_completion_request, information) == 32 );
-C_ASSERT( FIELD_OFFSET(struct add_completion_request, status) == 36 );
-C_ASSERT( sizeof(struct add_completion_request) == 40 );
+C_ASSERT( FIELD_OFFSET(struct add_completion_request, status) == 40 );
+C_ASSERT( sizeof(struct add_completion_request) == 48 );
 C_ASSERT( FIELD_OFFSET(struct remove_completion_request, handle) == 12 );
 C_ASSERT( sizeof(struct remove_completion_request) == 16 );
 C_ASSERT( FIELD_OFFSET(struct remove_completion_reply, ckey) == 8 );
 C_ASSERT( FIELD_OFFSET(struct remove_completion_reply, cvalue) == 16 );
 C_ASSERT( FIELD_OFFSET(struct remove_completion_reply, information) == 24 );
-C_ASSERT( FIELD_OFFSET(struct remove_completion_reply, status) == 28 );
-C_ASSERT( sizeof(struct remove_completion_reply) == 32 );
+C_ASSERT( FIELD_OFFSET(struct remove_completion_reply, status) == 32 );
+C_ASSERT( sizeof(struct remove_completion_reply) == 40 );
 C_ASSERT( FIELD_OFFSET(struct query_completion_request, handle) == 12 );
 C_ASSERT( sizeof(struct query_completion_request) == 16 );
 C_ASSERT( FIELD_OFFSET(struct query_completion_reply, depth) == 8 );
@@ -2119,9 +2134,9 @@ C_ASSERT( FIELD_OFFSET(struct set_completion_info_request, chandle) == 24 );
 C_ASSERT( sizeof(struct set_completion_info_request) == 32 );
 C_ASSERT( FIELD_OFFSET(struct add_fd_completion_request, handle) == 12 );
 C_ASSERT( FIELD_OFFSET(struct add_fd_completion_request, cvalue) == 16 );
-C_ASSERT( FIELD_OFFSET(struct add_fd_completion_request, status) == 24 );
-C_ASSERT( FIELD_OFFSET(struct add_fd_completion_request, information) == 28 );
-C_ASSERT( sizeof(struct add_fd_completion_request) == 32 );
+C_ASSERT( FIELD_OFFSET(struct add_fd_completion_request, information) == 24 );
+C_ASSERT( FIELD_OFFSET(struct add_fd_completion_request, status) == 32 );
+C_ASSERT( sizeof(struct add_fd_completion_request) == 40 );
 C_ASSERT( FIELD_OFFSET(struct get_window_layered_info_request, handle) == 12 );
 C_ASSERT( sizeof(struct get_window_layered_info_request) == 16 );
 C_ASSERT( FIELD_OFFSET(struct get_window_layered_info_reply, color_key) == 8 );

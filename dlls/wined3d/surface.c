@@ -6,7 +6,7 @@
  * Copyright 2002-2003 Raphael Junqueira
  * Copyright 2004 Christian Costa
  * Copyright 2005 Oliver Stieber
- * Copyright 2006-2011 Stefan Dösinger for CodeWeavers
+ * Copyright 2006-2011, 2013 Stefan Dösinger for CodeWeavers
  * Copyright 2007-2008 Henri Verbeet
  * Copyright 2006-2008 Roderick Colenbrander
  * Copyright 2009-2011 Henri Verbeet for CodeWeavers
@@ -101,7 +101,7 @@ static void surface_cleanup(struct wined3d_surface *surface)
     }
 
     if (surface->flags & SFLAG_USERPTR)
-        wined3d_surface_set_mem(surface, NULL);
+        wined3d_surface_set_mem(surface, NULL, 0);
     if (surface->overlay_dest)
         list_remove(&surface->overlay_entry);
 
@@ -572,8 +572,8 @@ static void surface_load_pbo(struct wined3d_surface *surface, const struct wined
     /* We don't need the system memory anymore and we can't even use it for PBOs. */
     if (!(surface->flags & SFLAG_CLIENT))
     {
-        HeapFree(GetProcessHeap(), 0, surface->resource.heapMemory);
-        surface->resource.heapMemory = NULL;
+        wined3d_resource_free_sysmem(surface->resource.heap_memory);
+        surface->resource.heap_memory = NULL;
     }
     surface->resource.allocatedMemory = NULL;
     surface->flags |= SFLAG_PBO;
@@ -592,11 +592,10 @@ static void surface_prepare_system_memory(struct wined3d_surface *surface)
     {
         /* Whatever surface we have, make sure that there is memory allocated
          * for the downloaded copy, or a PBO to map. */
-        if (!surface->resource.heapMemory)
-            surface->resource.heapMemory = HeapAlloc(GetProcessHeap(), 0, surface->resource.size + RESOURCE_ALIGNMENT);
+        if (!surface->resource.heap_memory)
+            surface->resource.heap_memory = wined3d_resource_allocate_sysmem(surface->resource.size);
 
-        surface->resource.allocatedMemory = (BYTE *)(((ULONG_PTR)surface->resource.heapMemory
-                + (RESOURCE_ALIGNMENT - 1)) & ~(RESOURCE_ALIGNMENT - 1));
+        surface->resource.allocatedMemory = surface->resource.heap_memory;
 
         if (surface->flags & SFLAG_INSYSMEM)
             ERR("Surface without memory or PBO has SFLAG_INSYSMEM set.\n");
@@ -608,9 +607,9 @@ static void surface_evict_sysmem(struct wined3d_surface *surface)
     if (surface->resource.map_count || (surface->flags & SFLAG_DONOTFREE))
         return;
 
-    HeapFree(GetProcessHeap(), 0, surface->resource.heapMemory);
+    wined3d_resource_free_sysmem(surface->resource.heap_memory);
     surface->resource.allocatedMemory = NULL;
-    surface->resource.heapMemory = NULL;
+    surface->resource.heap_memory = NULL;
     surface_modify_location(surface, SFLAG_INSYSMEM, FALSE);
 }
 
@@ -694,7 +693,6 @@ static void surface_release_client_storage(struct wined3d_surface *surface)
     struct wined3d_context *context = context_acquire(surface->resource.device, NULL);
     const struct wined3d_gl_info *gl_info = context->gl_info;
 
-    gl_info->gl_ops.gl.p_glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_FALSE);
     if (surface->texture_name)
     {
         surface_bind_and_dirtify(surface, context, FALSE);
@@ -707,7 +705,6 @@ static void surface_release_client_storage(struct wined3d_surface *surface)
         gl_info->gl_ops.gl.p_glTexImage2D(surface->texture_target, surface->texture_level,
                 GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
     }
-    gl_info->gl_ops.gl.p_glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_TRUE);
 
     context_release(context);
 
@@ -1780,14 +1777,13 @@ static void surface_remove_pbo(struct wined3d_surface *surface, const struct win
     }
     else
     {
-        if (!surface->resource.heapMemory)
-            surface->resource.heapMemory = HeapAlloc(GetProcessHeap(), 0, surface->resource.size + RESOURCE_ALIGNMENT);
+        if (!surface->resource.heap_memory)
+            surface->resource.heap_memory = wined3d_resource_allocate_sysmem(surface->resource.size);
         else if (!(surface->flags & SFLAG_CLIENT))
-            ERR("Surface %p has heapMemory %p and flags %#x.\n",
-                    surface, surface->resource.heapMemory, surface->flags);
+            ERR("Surface %p has heap_memory %p and flags %#x.\n",
+                    surface, surface->resource.heap_memory, surface->flags);
 
-        surface->resource.allocatedMemory = (BYTE *)(((ULONG_PTR)surface->resource.heapMemory
-                + (RESOURCE_ALIGNMENT - 1)) & ~(RESOURCE_ALIGNMENT - 1));
+        surface->resource.allocatedMemory = surface->resource.heap_memory;
     }
 
     GL_EXTCALL(glBindBufferARB(GL_PIXEL_UNPACK_BUFFER_ARB, surface->pbo));
@@ -1806,10 +1802,10 @@ static BOOL surface_init_sysmem(struct wined3d_surface *surface)
 {
     if (!surface->resource.allocatedMemory)
     {
-        if (!surface->resource.heapMemory)
+        if (!surface->resource.heap_memory)
         {
-            if (!(surface->resource.heapMemory = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
-                    surface->resource.size + RESOURCE_ALIGNMENT)))
+            surface->resource.heap_memory = wined3d_resource_allocate_sysmem(surface->resource.size);
+            if (!surface->resource.heap_memory)
             {
                 ERR("Failed to allocate memory.\n");
                 return FALSE;
@@ -1817,12 +1813,11 @@ static BOOL surface_init_sysmem(struct wined3d_surface *surface)
         }
         else if (!(surface->flags & SFLAG_CLIENT))
         {
-            ERR("Surface %p has heapMemory %p and flags %#x.\n",
-                    surface, surface->resource.heapMemory, surface->flags);
+            ERR("Surface %p has heap_memory %p and flags %#x.\n",
+                    surface, surface->resource.heap_memory, surface->flags);
         }
 
-        surface->resource.allocatedMemory =
-            (BYTE *)(((ULONG_PTR)surface->resource.heapMemory + (RESOURCE_ALIGNMENT - 1)) & ~(RESOURCE_ALIGNMENT - 1));
+        surface->resource.allocatedMemory = surface->resource.heap_memory;
     }
     else
     {
@@ -1965,8 +1960,8 @@ static HRESULT gdi_surface_private_setup(struct wined3d_surface *surface)
     hr = surface_create_dib_section(surface);
     if (SUCCEEDED(hr))
     {
-        HeapFree(GetProcessHeap(), 0, surface->resource.heapMemory);
-        surface->resource.heapMemory = NULL;
+        wined3d_resource_free_sysmem(surface->resource.heap_memory);
+        surface->resource.heap_memory = NULL;
         surface->resource.allocatedMemory = surface->dib.bitmap_data;
     }
 
@@ -2025,8 +2020,8 @@ static void gdi_surface_map(struct wined3d_surface *surface, const RECT *rect, D
             ERR("Failed to create dib section, hr %#x.\n", hr);
             return;
         }
-        HeapFree(GetProcessHeap(), 0, surface->resource.heapMemory);
-        surface->resource.heapMemory = NULL;
+        wined3d_resource_free_sysmem(surface->resource.heap_memory);
+        surface->resource.heap_memory = NULL;
         surface->resource.allocatedMemory = surface->dib.bitmap_data;
     }
 }
@@ -2246,12 +2241,11 @@ static void surface_download_data(struct wined3d_surface *surface, const struct 
             src_data = mem;
             dst_data = surface->resource.allocatedMemory;
             TRACE("(%p) : Repacking the surface data from pitch %d to pitch %d\n", surface, src_pitch, dst_pitch);
-            for (y = 1; y < surface->resource.height; ++y)
+            for (y = 0; y < surface->resource.height; ++y)
             {
-                /* skip the first row */
+                memcpy(dst_data, src_data, dst_pitch);
                 src_data += src_pitch;
                 dst_data += dst_pitch;
-                memcpy(dst_data, src_data, dst_pitch);
             }
 
             HeapFree(GetProcessHeap(), 0, mem);
@@ -2296,7 +2290,7 @@ static void surface_upload_data(struct wined3d_surface *surface, const struct wi
 
     if (format->flags & WINED3DFMT_FLAG_COMPRESSED)
     {
-        UINT row_length = wined3d_format_calculate_size(format, 1, update_w, 1);
+        UINT row_length = wined3d_format_calculate_size(format, 1, update_w, 1, 1);
         UINT row_count = (update_h + format->block_height - 1) / format->block_height;
         const BYTE *addr = data->addr;
         GLenum internal;
@@ -2643,7 +2637,7 @@ HRESULT surface_upload_from_surface(struct wined3d_surface *dst_surface, const P
 static void surface_allocate_surface(struct wined3d_surface *surface, const struct wined3d_gl_info *gl_info,
         const struct wined3d_format *format, BOOL srgb)
 {
-    BOOL enable_client_storage = FALSE;
+    BOOL disable_client_storage = FALSE;
     GLsizei width = surface->pow2Width;
     GLsizei height = surface->pow2Height;
     const BYTE *mem = NULL;
@@ -2686,10 +2680,7 @@ static void surface_allocate_surface(struct wined3d_surface *surface, const stru
              * SFLAG_CONVERTED: The conversion destination memory is freed after loading the surface
              * allocatedMemory == NULL: Not defined in the extension. Seems to disable client storage effectively
              */
-            gl_info->gl_ops.gl.p_glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_FALSE);
-            checkGLcall("glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_FALSE)");
             surface->flags &= ~SFLAG_CLIENT;
-            enable_client_storage = TRUE;
         }
         else
         {
@@ -2697,9 +2688,12 @@ static void surface_allocate_surface(struct wined3d_surface *surface, const stru
 
             /* Point OpenGL to our allocated texture memory. Do not use
              * resource.allocatedMemory here because it might point into a
-             * PBO. Instead use heapMemory, but get the alignment right. */
-            mem = (BYTE *)(((ULONG_PTR)surface->resource.heapMemory
-                    + (RESOURCE_ALIGNMENT - 1)) & ~(RESOURCE_ALIGNMENT - 1));
+             * PBO. Instead use heap_memory. */
+            mem = surface->resource.heap_memory;
+
+            gl_info->gl_ops.gl.p_glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_TRUE);
+            checkGLcall("glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_TRUE)");
+            disable_client_storage = TRUE;
         }
     }
 
@@ -2716,10 +2710,10 @@ static void surface_allocate_surface(struct wined3d_surface *surface, const stru
         checkGLcall("glTexImage2D");
     }
 
-    if (enable_client_storage)
+    if (disable_client_storage)
     {
-        gl_info->gl_ops.gl.p_glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_TRUE);
-        checkGLcall("glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_TRUE)");
+        gl_info->gl_ops.gl.p_glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_FALSE);
+        checkGLcall("glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_FALSE)");
     }
 }
 
@@ -3202,6 +3196,9 @@ DWORD CDECL wined3d_surface_get_pitch(const struct wined3d_surface *surface)
 
     TRACE("surface %p.\n", surface);
 
+    if (surface->pitch)
+        return surface->pitch;
+
     if (format->flags & WINED3DFMT_FLAG_BLOCKS)
     {
         /* Since compressed formats are block based, pitch means the amount of
@@ -3221,7 +3218,7 @@ DWORD CDECL wined3d_surface_get_pitch(const struct wined3d_surface *surface)
     return pitch;
 }
 
-HRESULT CDECL wined3d_surface_set_mem(struct wined3d_surface *surface, void *mem)
+HRESULT CDECL wined3d_surface_set_mem(struct wined3d_surface *surface, void *mem, UINT pitch)
 {
     TRACE("surface %p, mem %p.\n", surface, mem);
 
@@ -3254,8 +3251,8 @@ HRESULT CDECL wined3d_surface_set_mem(struct wined3d_surface *surface, void *mem
         }
         else if (!(surface->flags & SFLAG_USERPTR))
         {
-            release = surface->resource.heapMemory;
-            surface->resource.heapMemory = NULL;
+            release = surface->resource.heap_memory;
+            surface->resource.heap_memory = NULL;
         }
         surface->resource.allocatedMemory = mem;
         surface->flags |= SFLAG_USERPTR;
@@ -3268,12 +3265,12 @@ HRESULT CDECL wined3d_surface_set_mem(struct wined3d_surface *surface, void *mem
             surface_release_client_storage(surface);
 
         /* Now free the old memory if any. */
-        HeapFree(GetProcessHeap(), 0, release);
+        wined3d_resource_free_sysmem(release);
     }
     else if (surface->flags & SFLAG_USERPTR)
     {
-        /* HeapMemory should be NULL already. */
-        if (surface->resource.heapMemory)
+        /* heap_memory should be NULL already. */
+        if (surface->resource.heap_memory)
             ERR("User pointer surface has heap memory allocated.\n");
 
         if (!mem)
@@ -3289,6 +3286,8 @@ HRESULT CDECL wined3d_surface_set_mem(struct wined3d_surface *surface, void *mem
 
         surface_modify_location(surface, SFLAG_INSYSMEM, TRUE);
     }
+
+    surface->pitch = pitch;
 
     return WINED3D_OK;
 }
@@ -3434,7 +3433,7 @@ HRESULT CDECL wined3d_surface_update_desc(struct wined3d_surface *surface,
     struct wined3d_device *device = surface->resource.device;
     const struct wined3d_gl_info *gl_info = &device->adapter->gl_info;
     const struct wined3d_format *format = wined3d_get_format(gl_info, format_id);
-    UINT resource_size = wined3d_format_calculate_size(format, device->surface_alignment, width, height);
+    UINT resource_size = wined3d_format_calculate_size(format, device->surface_alignment, width, height, 1);
 
     TRACE("surface %p, width %u, height %u, format %s, multisample_type %#x, multisample_quality %u.\n",
             surface, width, height, debug_d3dformat(format_id), multisample_type, multisample_type);
@@ -3455,8 +3454,8 @@ HRESULT CDECL wined3d_surface_update_desc(struct wined3d_surface *surface,
 
     surface->flags &= ~(SFLAG_LOCATIONS | SFLAG_USERPTR);
     surface->resource.allocatedMemory = NULL;
-    HeapFree(GetProcessHeap(), 0, surface->resource.heapMemory);
-    surface->resource.heapMemory = NULL;
+    wined3d_resource_free_sysmem(surface->resource.heap_memory);
+    surface->resource.heap_memory = NULL;
 
     surface->resource.width = width;
     surface->resource.height = height;
@@ -3952,8 +3951,8 @@ HRESULT CDECL wined3d_surface_getdc(struct wined3d_surface *surface, HDC *dc)
         /* Use the DIB section from now on if we are not using a PBO. */
         if (!(surface->flags & (SFLAG_PBO | SFLAG_PIN_SYSMEM)))
         {
-            HeapFree(GetProcessHeap(), 0, surface->resource.heapMemory);
-            surface->resource.heapMemory = NULL;
+            wined3d_resource_free_sysmem(surface->resource.heap_memory);
+            surface->resource.heap_memory = NULL;
             surface->resource.allocatedMemory = surface->dib.bitmap_data;
         }
     }
@@ -4782,9 +4781,9 @@ void flip_surface(struct wined3d_surface *front, struct wined3d_surface *back)
         front->resource.allocatedMemory = back->resource.allocatedMemory;
         back->resource.allocatedMemory = tmp;
 
-        tmp = front->resource.heapMemory;
-        front->resource.heapMemory = back->resource.heapMemory;
-        back->resource.heapMemory = tmp;
+        tmp = front->resource.heap_memory;
+        front->resource.heap_memory = back->resource.heap_memory;
+        back->resource.heap_memory = tmp;
     }
 
     /* Flip the PBO */
@@ -5453,9 +5452,9 @@ static HRESULT IWineD3DSurfaceImpl_BltOverride(struct wined3d_surface *dst_surfa
 
         if (!dst_surface->resource.map_count && !(dst_surface->flags & SFLAG_DONOTFREE))
         {
-            HeapFree(GetProcessHeap(), 0, dst_surface->resource.heapMemory);
+            wined3d_resource_free_sysmem(dst_surface->resource.heap_memory);
             dst_surface->resource.allocatedMemory = NULL;
-            dst_surface->resource.heapMemory = NULL;
+            dst_surface->resource.heap_memory = NULL;
         }
         else
         {
@@ -7158,7 +7157,7 @@ static HRESULT surface_init(struct wined3d_surface *surface, UINT alignment, UIN
 
     /* FIXME: Check that the format is supported by the device. */
 
-    resource_size = wined3d_format_calculate_size(format, alignment, width, height);
+    resource_size = wined3d_format_calculate_size(format, alignment, width, height, 1);
     if (!resource_size)
         return WINED3DERR_INVALIDCALL;
 
@@ -7221,8 +7220,8 @@ static HRESULT surface_init(struct wined3d_surface *surface, UINT alignment, UIN
     if ((usage & WINED3DUSAGE_OWNDC) && !surface->hDC
             && SUCCEEDED(surface_create_dib_section(surface)))
     {
-        HeapFree(GetProcessHeap(), 0, surface->resource.heapMemory);
-        surface->resource.heapMemory = NULL;
+        wined3d_resource_free_sysmem(surface->resource.heap_memory);
+        surface->resource.heap_memory = NULL;
         surface->resource.allocatedMemory = surface->dib.bitmap_data;
     }
 

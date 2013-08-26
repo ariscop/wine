@@ -93,6 +93,7 @@ static __msvcrt_ulong* (__cdecl *p_doserrno)(void);
 static void (__cdecl *p_srand)(unsigned int);
 static char* (__cdecl *p_strtok)(char*, const char*);
 static wchar_t* (__cdecl *p_wcstok)(wchar_t*, const wchar_t*);
+static unsigned char* (__cdecl *p__mbstok)(unsigned char*, const unsigned char*);
 static char* (__cdecl *p_strerror)(int);
 static wchar_t* (__cdecl *p_wcserror)(int);
 static char* (__cdecl *p_tmpnam)(char*);
@@ -110,6 +111,7 @@ static int (__cdecl *p_vswprintf_l)(wchar_t*, const wchar_t*, _locale_t, __ms_va
 static FILE* (__cdecl *p_fopen)(const char*, const char*);
 static int (__cdecl *p_fclose)(FILE*);
 static int (__cdecl *p_unlink)(const char*);
+static int (__cdecl *p_access_s)(const char*, int);
 static void (__cdecl *p_lock_file)(FILE*);
 static void (__cdecl *p_unlock_file)(FILE*);
 static int (__cdecl *p_fileno)(FILE*);
@@ -279,6 +281,7 @@ static BOOL init(void)
     SET(p_srand, "srand");
     SET(p_strtok, "strtok");
     SET(p_wcstok, "wcstok");
+    SET(p__mbstok, "_mbstok");
     SET(p_strerror, "strerror");
     SET(p_wcserror, "_wcserror");
     SET(p_tmpnam, "tmpnam");
@@ -296,6 +299,7 @@ static BOOL init(void)
     SET(p_fopen, "fopen");
     SET(p_fclose, "fclose");
     SET(p_unlink, "_unlink");
+    SET(p_access_s, "_access_s");
     SET(p_lock_file, "_lock_file");
     SET(p_unlock_file, "_unlock_file");
     SET(p_fileno, "_fileno");
@@ -1038,6 +1042,7 @@ static void test_getptd(void)
     DWORD tid = GetCurrentThreadId();
     wchar_t testW[] = {'t','e','s','t',0}, tW[] = {'t',0}, *wp;
     char test[] = "test", *p;
+    unsigned char mbstok_test[] = "test", *up;
     struct tm time;
     __time64_t secs = 0;
     int dec, sign;
@@ -1053,6 +1058,8 @@ static void test_getptd(void)
     ok(ptd->strtok_next == p+3, "ptd->strtok_next is incorrect\n");
     wp = p_wcstok(testW, tW);
     ok(ptd->wcstok_next == wp+3, "ptd->wcstok_next is incorrect\n");
+    up = p__mbstok(mbstok_test, (unsigned char*)"t");
+    ok(ptd->mbstok_next == up+3, "ptd->mbstok_next is incorrect\n");
     ok(p_strerror(0) == ptd->strerror_buffer, "ptd->strerror_buffer is incorrect\n");
     ok(p_wcserror(0) == ptd->wcserror_buffer, "ptd->wcserror_buffer is incorrect\n");
     ok(p_tmpnam(NULL) == ptd->tmpnam_buffer, "ptd->tmpnam_buffer is incorrect\n");
@@ -1212,6 +1219,85 @@ static void test_byteswap(void)
     ok(ret == 0, "ret = %lx\n", ret);
 }
 
+static void test_access_s(void)
+{
+    FILE *f;
+    int res;
+
+    f = p_fopen("test_file", "w");
+    ok(f != NULL, "unable to create test file\n");
+    if(!f)
+        return;
+
+    p_fclose(f);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 0);
+    ok(res == 0, "got %x\n", res);
+    ok(errno == 0xdeadbeef, "got %x\n", res);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 2);
+    ok(res == 0, "got %x\n", res);
+    ok(errno == 0xdeadbeef, "got %x\n", res);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 4);
+    ok(res == 0, "got %x\n", res);
+    ok(errno == 0xdeadbeef, "got %x\n", res);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 6);
+    ok(res == 0, "got %x\n", res);
+    ok(errno == 0xdeadbeef, "got %x\n", res);
+
+    SetFileAttributesA("test_file", FILE_ATTRIBUTE_READONLY);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 0);
+    ok(res == 0, "got %x\n", res);
+    ok(errno == 0xdeadbeef, "got %x\n", res);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 2);
+    ok(res == EACCES, "got %x\n", res);
+    ok(errno == EACCES, "got %x\n", res);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 4);
+    ok(res == 0, "got %x\n", res);
+    ok(errno == 0xdeadbeef, "got %x\n", res);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 6);
+    ok(res == EACCES, "got %x\n", res);
+    ok(errno == EACCES, "got %x\n", res);
+
+    SetFileAttributesA("test_file", FILE_ATTRIBUTE_NORMAL);
+
+    p_unlink("test_file");
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 0);
+    ok(res == ENOENT, "got %x\n", res);
+    ok(errno == ENOENT, "got %x\n", res);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 2);
+    ok(res == ENOENT, "got %x\n", res);
+    ok(errno == ENOENT, "got %x\n", res);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 4);
+    ok(res == ENOENT, "got %x\n", res);
+    ok(errno == ENOENT, "got %x\n", res);
+
+    errno = 0xdeadbeef;
+    res = p_access_s("test_file", 6);
+    ok(res == ENOENT, "got %x\n", res);
+    ok(errno == ENOENT, "got %x\n", res);
+}
+
 START_TEST(msvcr90)
 {
     if(!init())
@@ -1237,4 +1323,5 @@ START_TEST(msvcr90)
     test__vswprintf_l();
     test_nonblocking_file_access();
     test_byteswap();
+    test_access_s();
 }

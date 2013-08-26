@@ -35,13 +35,16 @@
 #include "wine/gdi_driver.h"
 
 
+extern BOOL skip_single_buffer_flushes DECLSPEC_HIDDEN;
+extern BOOL allow_vsync DECLSPEC_HIDDEN;
+extern BOOL allow_set_gamma DECLSPEC_HIDDEN;
+
+
 extern const char* debugstr_cf(CFTypeRef t) DECLSPEC_HIDDEN;
 
 static inline CGRect cgrect_from_rect(RECT rect)
 {
-    if (rect.left >= rect.right || rect.top >= rect.bottom)
-        return CGRectNull;
-    return CGRectMake(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+    return CGRectMake(rect.left, rect.top, max(0, rect.right - rect.left), max(0, rect.bottom - rect.top));
 }
 
 static inline RECT rect_from_cgrect(CGRect cgrect)
@@ -135,6 +138,7 @@ struct macdrv_win_data
     BOOL                per_pixel_alpha : 1;    /* is window using per-pixel alpha? */
     BOOL                minimized : 1;          /* is window minimized? */
     struct window_surface *surface;
+    struct window_surface *unminimized_surface;
 };
 
 extern struct macdrv_win_data *get_win_data(HWND hwnd) DECLSPEC_HIDDEN;
@@ -161,6 +165,7 @@ extern void macdrv_window_did_unminimize(HWND hwnd) DECLSPEC_HIDDEN;
 extern void macdrv_mouse_button(HWND hwnd, const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_mouse_moved(HWND hwnd, const macdrv_event *event) DECLSPEC_HIDDEN;
 extern void macdrv_mouse_scroll(HWND hwnd, const macdrv_event *event) DECLSPEC_HIDDEN;
+extern void macdrv_release_capture(HWND hwnd, const macdrv_event *event) DECLSPEC_HIDDEN;
 
 extern void macdrv_compute_keyboard_layout(struct macdrv_thread_data *thread_data) DECLSPEC_HIDDEN;
 extern void macdrv_keyboard_changed(const macdrv_event *event) DECLSPEC_HIDDEN;

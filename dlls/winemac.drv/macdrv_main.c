@@ -38,11 +38,18 @@ WINE_DEFAULT_DEBUG_CHANNEL(macdrv);
 #define kCFCoreFoundationVersionNumber10_7      635.00
 #endif
 
+#define IS_OPTION_TRUE(ch) \
+    ((ch) == 'y' || (ch) == 'Y' || (ch) == 't' || (ch) == 'T' || (ch) == '1')
+
 C_ASSERT(NUM_EVENT_TYPES <= sizeof(macdrv_event_mask) * 8);
 
 DWORD thread_data_tls_index = TLS_OUT_OF_INDEXES;
 
 int topmost_float_inactive = TOPMOST_FLOAT_INACTIVE_NONFULLSCREEN;
+int capture_displays_for_fullscreen = 0;
+BOOL skip_single_buffer_flushes = FALSE;
+BOOL allow_vsync = TRUE;
+BOOL allow_set_gamma = TRUE;
 
 
 /**************************************************************************
@@ -149,6 +156,18 @@ static void setup_options(void)
             topmost_float_inactive = TOPMOST_FLOAT_INACTIVE_NONFULLSCREEN;
     }
 
+    if (!get_config_key(hkey, appkey, "CaptureDisplaysForFullscreen", buffer, sizeof(buffer)))
+        capture_displays_for_fullscreen = IS_OPTION_TRUE(buffer[0]);
+
+    if (!get_config_key(hkey, appkey, "SkipSingleBufferFlushes", buffer, sizeof(buffer)))
+        skip_single_buffer_flushes = IS_OPTION_TRUE(buffer[0]);
+
+    if (!get_config_key(hkey, appkey, "AllowVerticalSync", buffer, sizeof(buffer)))
+        allow_vsync = IS_OPTION_TRUE(buffer[0]);
+
+    if (!get_config_key(hkey, appkey, "AllowSetGamma", buffer, sizeof(buffer)))
+        allow_set_gamma = IS_OPTION_TRUE(buffer[0]);
+
     if (appkey) RegCloseKey(appkey);
     if (hkey) RegCloseKey(hkey);
 }
@@ -157,7 +176,7 @@ static void setup_options(void)
 /***********************************************************************
  *              process_attach
  */
-static BOOL process_attach(void)
+static BOOL process_attach( HINSTANCE instance )
 {
     SessionAttributeBits attributes;
     OSStatus status;
@@ -179,6 +198,7 @@ static BOOL process_attach(void)
 
     set_app_icon();
     macdrv_clipboard_process_attach();
+    IME_RegisterClasses( instance );
 
     return TRUE;
 }
@@ -272,8 +292,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved)
     switch(reason)
     {
     case DLL_PROCESS_ATTACH:
-        IME_RegisterClasses(hinst);
-        ret = process_attach();
+        ret = process_attach( hinst );
         break;
     case DLL_THREAD_DETACH:
         thread_detach();

@@ -282,6 +282,8 @@ static CRITICAL_SECTION_DEBUG critsect_debug =
 };
 static CRITICAL_SECTION context_section = { &critsect_debug, -1, 0, 0, 0, 0 };
 
+static const BOOL is_win64 = sizeof(void *) > sizeof(int);
+
 static struct opengl_funcs opengl_funcs;
 
 #define USE_GL_FUNC(name) #name,
@@ -394,9 +396,11 @@ static void (*pglXCopySubBufferMESA)(Display *dpy, GLXDrawable drawable, int x, 
 /* Standard OpenGL */
 static void (*pglFinish)(void);
 static void (*pglFlush)(void);
+static const GLubyte *(*pglGetString)(GLenum name);
 
 static void wglFinish(void);
 static void wglFlush(void);
+static const GLubyte *wglGetString(GLenum name);
 
 /* check if the extension is present in the list */
 static BOOL has_extension( const char *list, const char *ext )
@@ -420,6 +424,8 @@ static int GLXErrorHandler(Display *dpy, XErrorEvent *event, void *arg)
 
 static BOOL X11DRV_WineGL_InitOpenglInfo(void)
 {
+    static const char legacy_extensions[] = " WGL_EXT_extensions_string WGL_EXT_swap_control";
+
     int screen = DefaultScreen(gdi_display);
     Window win = 0, root = 0;
     const char *gl_renderer;
@@ -464,14 +470,16 @@ static BOOL X11DRV_WineGL_InitOpenglInfo(void)
 
     if(pglXMakeCurrent(gdi_display, win, ctx) == 0)
     {
-        ERR_(winediag)( "Unable to activate OpenGL context, most likely your OpenGL drivers haven't been installed correctly\n" );
+        ERR_(winediag)( "Unable to activate OpenGL context, most likely your %s OpenGL drivers haven't been "
+                        "installed correctly\n", is_win64 ? "64-bit" : "32-bit" );
         goto done;
     }
     gl_renderer = (const char *)opengl_funcs.gl.p_glGetString(GL_RENDERER);
     WineGLInfo.glVersion = (const char *) opengl_funcs.gl.p_glGetString(GL_VERSION);
     str = (const char *) opengl_funcs.gl.p_glGetString(GL_EXTENSIONS);
-    WineGLInfo.glExtensions = HeapAlloc(GetProcessHeap(), 0, strlen(str)+1);
+    WineGLInfo.glExtensions = HeapAlloc(GetProcessHeap(), 0, strlen(str)+sizeof(legacy_extensions));
     strcpy(WineGLInfo.glExtensions, str);
+    strcat(WineGLInfo.glExtensions, legacy_extensions);
 
     /* Get the common GLX version supported by GLX client and server ( major/minor) */
     pglXQueryVersion(gdi_display, &WineGLInfo.glxVersion[0], &WineGLInfo.glxVersion[1]);
@@ -506,9 +514,10 @@ static BOOL X11DRV_WineGL_InitOpenglInfo(void)
          * Detect a local X11 server by checking whether the X11 socket is a Unix socket.
          */
         if(!getsockname(fd, (struct sockaddr *)&uaddr, &uaddrlen) && uaddr.sun_family == AF_UNIX)
-            ERR_(winediag)("Direct rendering is disabled, most likely your OpenGL drivers "
+            ERR_(winediag)("Direct rendering is disabled, most likely your %s OpenGL drivers "
                            "haven't been installed correctly (using GL renderer %s, version %s).\n",
-                           debugstr_a(gl_renderer), debugstr_a(WineGLInfo.glVersion));
+                           is_win64 ? "64-bit" : "32-bit", debugstr_a(gl_renderer),
+                           debugstr_a(WineGLInfo.glVersion));
     }
     else
     {
@@ -522,9 +531,10 @@ static BOOL X11DRV_WineGL_InitOpenglInfo(void)
          * it shows 'Mesa X11'.
          */
         if(!strcmp(gl_renderer, "Software Rasterizer") || !strcmp(gl_renderer, "Mesa X11"))
-            ERR_(winediag)("The Mesa OpenGL driver is using software rendering, most likely your OpenGL "
+            ERR_(winediag)("The Mesa OpenGL driver is using software rendering, most likely your %s OpenGL "
                            "drivers haven't been installed correctly (using GL renderer %s, version %s).\n",
-                           debugstr_a(gl_renderer), debugstr_a(WineGLInfo.glVersion));
+                           is_win64 ? "64-bit" : "32-bit", debugstr_a(gl_renderer),
+                           debugstr_a(WineGLInfo.glVersion));
     }
     ret = TRUE;
 
@@ -576,6 +586,7 @@ static BOOL has_opengl(void)
     do { p##func = opengl_funcs.gl.p_##func; opengl_funcs.gl.p_##func = w##func; } while(0)
     REDIRECT( glFinish );
     REDIRECT( glFlush );
+    REDIRECT( glGetString );
 #undef REDIRECT
 
     pglXGetProcAddressARB = wine_dlsym(opengl_handle, "glXGetProcAddressARB", NULL, 0);
@@ -917,6 +928,7 @@ static int ConvertAttribWGLtoGLX(const int* iWGLAttr, int* oGLXAttr, struct wgl_
       break ;
     default:
       FIXME("unsupported %x WGL Attribute\n", iWGLAttr[cur]);
+      cur++;
       break;
     }
     ++cur;
@@ -1919,6 +1931,13 @@ static void wglFlush(void)
 
     pglFlush();
     if (escape.gl_drawable) ExtEscape( ctx->hdc, X11DRV_ESCAPE, sizeof(escape), (LPSTR)&escape, 0, NULL );
+}
+
+static const GLubyte *wglGetString(GLenum name)
+{
+    if (name == GL_EXTENSIONS && WineGLInfo.glExtensions)
+        return (const GLubyte *)WineGLInfo.glExtensions;
+    return pglGetString(name);
 }
 
 /***********************************************************************

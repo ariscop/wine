@@ -1942,7 +1942,8 @@ const struct wined3d_format *wined3d_get_format(const struct wined3d_gl_info *gl
     return &gl_info->formats[idx];
 }
 
-UINT wined3d_format_calculate_size(const struct wined3d_format *format, UINT alignment, UINT width, UINT height)
+UINT wined3d_format_calculate_size(const struct wined3d_format *format, UINT alignment,
+        UINT width, UINT height, UINT depth)
 {
     UINT size;
 
@@ -1967,6 +1968,8 @@ UINT wined3d_format_calculate_size(const struct wined3d_format *format, UINT ali
         size *= format->height_scale.numerator;
         size /= format->height_scale.denominator;
     }
+
+    size *= depth;
 
     return size;
 }
@@ -2586,10 +2589,6 @@ const char *debug_d3dstate(DWORD state)
         return "STATE_GEOMETRY_SHADER";
     if (STATE_IS_VIEWPORT(state))
         return "STATE_VIEWPORT";
-    if (STATE_IS_VERTEXSHADERCONSTANT(state))
-        return "STATE_VERTEXSHADERCONSTANT";
-    if (STATE_IS_PIXELSHADERCONSTANT(state))
-        return "STATE_PIXELSHADERCONSTANT";
     if (STATE_IS_LIGHT_TYPE(state))
         return "STATE_LIGHT_TYPE";
     if (STATE_IS_ACTIVELIGHT(state))
@@ -3552,8 +3551,7 @@ void wined3d_ffp_get_vs_settings(const struct wined3d_state *state, const struct
     {
         memset(settings, 0, sizeof(*settings));
 
-        settings->clipping = state->render_states[WINED3D_RS_CLIPPING]
-                && state->render_states[WINED3D_RS_CLIPPLANEENABLE];
+        settings->transformed = 1;
         settings->point_size = state->gl_primitive_type == GL_POINTS;
         if (!state->render_states[WINED3D_RS_FOGENABLE])
             settings->fog_mode = WINED3D_FFP_VS_FOG_OFF;
@@ -3573,6 +3571,7 @@ void wined3d_ffp_get_vs_settings(const struct wined3d_state *state, const struct
         return;
     }
 
+    settings->transformed = 0;
     settings->clipping = state->render_states[WINED3D_RS_CLIPPING]
             && state->render_states[WINED3D_RS_CLIPPLANEENABLE];
     settings->normal = !!(si->use_map & (1 << WINED3D_FFP_NORMAL));
@@ -3614,10 +3613,19 @@ void wined3d_ffp_get_vs_settings(const struct wined3d_state *state, const struct
                     & WINED3D_FFP_LIGHT_TYPE_MASK) << WINED3D_FFP_LIGHT_TYPE_SHIFT(i);
     }
 
+    settings->ortho_fog = 0;
     if (!state->render_states[WINED3D_RS_FOGENABLE])
         settings->fog_mode = WINED3D_FFP_VS_FOG_OFF;
     else if (state->render_states[WINED3D_RS_FOGTABLEMODE] != WINED3D_FOG_NONE)
+    {
         settings->fog_mode = WINED3D_FFP_VS_FOG_DEPTH;
+
+        if (state->transforms[WINED3D_TS_PROJECTION].u.m[0][3] == 0.0f
+                && state->transforms[WINED3D_TS_PROJECTION].u.m[1][3] == 0.0f
+                && state->transforms[WINED3D_TS_PROJECTION].u.m[2][3] == 0.0f
+                && state->transforms[WINED3D_TS_PROJECTION].u.m[3][3] == 1.0f)
+            settings->ortho_fog = 1;
+    }
     else if (state->render_states[WINED3D_RS_FOGVERTEXMODE] == WINED3D_FOG_NONE)
         settings->fog_mode = WINED3D_FFP_VS_FOG_FOGCOORD;
     else if (state->render_states[WINED3D_RS_RANGEFOGENABLE])
@@ -3702,4 +3710,19 @@ void wined3d_get_draw_rect(const struct wined3d_state *state, RECT *rect)
 
     if (state->render_states[WINED3D_RS_SCISSORTESTENABLE])
         IntersectRect(rect, rect, &state->scissor_rect);
+}
+
+const char *wined3d_debug_location(DWORD location)
+{
+    char buf[200];
+
+    buf[0] = '\0';
+#define LOCATION_TO_STR(u) if (location & u) { strcat(buf, " | "#u); location &= ~u; }
+    LOCATION_TO_STR(WINED3D_LOCATION_DISCARDED);
+    LOCATION_TO_STR(WINED3D_LOCATION_SYSMEM);
+    LOCATION_TO_STR(WINED3D_LOCATION_TEXTURE_RGB);
+#undef LOCATION_TO_STR
+    if (location) FIXME("Unrecognized location flag(s) %#x.\n", location);
+
+    return buf[0] ? wine_dbg_sprintf("%s", &buf[3]) : "0";
 }

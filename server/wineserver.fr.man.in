@@ -1,31 +1,30 @@
-.\" -*- nroff -*-
-.TH WINESERVER 1 "avril 2010" "@PACKAGE_STRING@" "Windows sur Unix"
+.TH WINESERVER 1 "octobre 2005" "@PACKAGE_STRING@" "Windows sur Unix"
 .SH NOM
 wineserver \- le serveur Wine
 .SH SYNOPSIS
-.BI wineserver\  [options]
+.B wineserver
+.RI [ options ]
 .SH DESCRIPTION
 .B wineserver
 est un démon qui fournit à Wine à peu près les mêmes services
 que le noyau de Windows fournit sous Windows.
 .PP
 .B wineserver
-est normalement exécuté automatiquement lorsque \fBwine\fR(1) est démarré,
-vous ne devriez donc pas vous en préoccuper. Néanmoins, dans certains cas, il
-peut être utile de démarrer \fBwineserver\fR explicitement avec certaines options,
-comme expliqué ci-après.
+est normalement lancé automatiquement lorsque \fBwine\fR(1) démarre, mais
+il peut être utile de le démarrer explicitement avec certaines options,
+détaillées ci-après.
 .SH OPTIONS
 .TP
-\fB\-d\fI[n]\fR, \fB--debug\fI[=n]
+\fB\-d\fR[\fIn\fR], \fB--debug\fR[\fB=\fIn\fR]
 Définit le niveau de débogage à
 .IR n .
-0 signifie aucune information de débogage, 1 est le niveau normal et 2 est
-pour un débogage plus important. Si
+0 signifie aucune information de débogage, 1 est le niveau normal et 2 indique
+un débogage plus important. Si
 .I n
 n'est pas spécifié, la valeur par défaut est 1. La sortie de débogage sera
-stderr. \fBwine\fR(1) spécifie automatiquement le niveau de débogage lorsqu'il
+stderr. \fBwine\fR(1) active automatiquement le débogage au niveau normal lorsqu'il
 démarre \fBwineserver\fR si l'option +server est indiquée dans la variable
-WINEDEBUG.
+\fBWINEDEBUG\fR.
 .TP
 .BR \-f ", " --foreground
 Laisse le serveur au premier plan pour un débogage plus aisé, par
@@ -34,18 +33,17 @@ exemple lorsqu'il est exécuté dans un débogueur.
 .BR \-h ", " --help
 Affiche un message d'aide.
 .TP
-\fB\-k\fI[n]\fR, \fB--kill\fI[=n]
+\fB\-k\fR[\fIn\fR], \fB--kill\fR[\fB=\fIn\fR]
 Termine le
 .B wineserver
-actuellement exécuté en envoyant facultativement un signal \fIn\fR. Si
-aucun signal n'est spécifié, un signal SIGINT est envoyé en premier,
-puis un signal SIGKILL.  L'instance de \fBwineserver\fR qui est
-terminée est sélectionnée en fonction de la variable d'environnement
-WINEPREFIX.
+actuellement exécuté en lui envoyant facultativement le signal \fIn\fR. Si
+aucun signal n'est spécifié, un signal \fBSIGINT\fR est envoyé en premier,
+puis un signal \fBSIGKILL\fR. L'instance de \fBwineserver\fR à arrêter
+est déterminée par la variable d'environnement \fBWINEPREFIX\fR.
 .TP
-\fB\-p\fI[n]\fR, \fB--persistent\fI[=n]
+\fB\-p\fR[\fIn\fR], \fB--persistent\fR[\fB=\fIn\fR]
 Spécifie le délai de persistance de \fBwineserver\fR, c'est-à-dire le
-temps pendant lequel le serveur continuera de tourner après que tous les
+temps pendant lequel le serveur continuera à tourner après que tous les
 processus clients se sont terminés. Ceci évite le coût inhérent à l'arrêt
 puis au redémarrage du serveur lorsque des programmes sont lancés successivement
 à intervalle rapproché.
@@ -53,29 +51,29 @@ Le délai d'attente \fIn\fR est exprimé en secondes (3 secondes par défaut).
 Si \fIn\fR n'est pas spécifié, le serveur s'exécute indéfiniment.
 .TP
 .BR \-v ", " --version
-Affiche les informations sur la version et quitte.
+Affiche les informations sur la version et se termine.
 .TP
 .BR \-w ", " --wait
 Attend que le
 .B wineserver
 actuellement exécuté se termine.
-.SH VARIABLES D'ENVIRONNEMENT
+.SH ENVIRONNEMENT
 .TP
-.I WINEPREFIX
-Si définie, le contenu de cette variable est pris comme le nom du répertoire où
+.B WINEPREFIX
+Si définie, cette variable indique le nom du répertoire où
 .B wineserver
-stocke ses données (la valeur par défaut est \fI$HOME/.wine\fR). Tous les processus
+stocke ses données (\fI$HOME/.wine\fR par défaut). Tous les processus
 .B wine
 utilisant le même
 .B wineserver
 (c'est-à-dire pour un même utilisateur) partagent certains éléments comme la base de registre,
 la mémoire partagée et les objets du noyau.
 En donnant à
-.I WINEPREFIX
+.B WINEPREFIX
 une valeur spécifique pour différents processus Wine, il est possible d'exécuter plusieurs
 sessions de Wine totalement indépendantes.
 .TP
-.I WINESERVER
+.B WINESERVER
 Spécifie le chemin et le nom de l'exécutable
 .B wineserver
 qui sera lancé automatiquement par \fBwine\fR.
@@ -90,26 +88,28 @@ Répertoire contenant les données utilisateur gérées par
 .BR wine .
 .TP
 .BI /tmp/.wine- uid
-Le répertoire contenant le socket de serveur Unix et le fichier de verrouillage.
-Ces fichiers sont créés dans un sous-répertoire dont le nom est généré à partir
-des périphérique et numéros d'inodes du répertoire WINEPREFIX.
+Répertoire contenant le socket de serveur Unix et le fichier de verrouillage.
+Ces fichiers sont créés dans un sous-répertoire dont le nom est dérivé
+des périphérique et numéros d'inodes du répertoire \fBWINEPREFIX\fR.
 .SH AUTEURS
 L'auteur originel de
 .B wineserver
-est Alexandre Julliard. Beaucoup d'autres personnes ont contribué de nouvelles fonctionnalités
-et des correction d'anomalies. Référez-vous au fichier Changelog dans la distribution de Wine
-pour les détails complets.
-.SH ANOMALIES
-Si vous détectez une anomalie, veuillez soumettre un rapport d'anomalie sur
+est Alexandre Julliard. Beaucoup d'autres personnes ont contribué des nouvelles fonctionnalités
+et des corrections de bugs. Pour une liste complète, consultez l'historique git.
+.SH BUGS
+Les bugs peuvent être signalés (en anglais) sur le
 .UR http://bugs.winehq.org
-.BR http://bugs.winehq.org .
-.UE
+.B système de suivi des problèmes de Wine
+.UE .
 .SH DISPONIBILITÉ
 .B wineserver
-fait partie de la distribution de Wine qui est disponible depuis WineHQ,
-le quartier général des développeurs de Wine, sur
+fait partie de la distribution de Wine, disponible depuis WineHQ, le
 .UR http://www.winehq.org/
-.BR http://www.winehq.org/ .
-.UE
-.SH "VOIR AUSSI"
-.BR wine (1).
+.B quartier général des développeurs de Wine
+.UE .
+.SH "VOIR AUSSI"
+.BR wine (1),
+.br
+.UR http://www.winehq.org/help
+.B Documentation et support de Wine
+.UE .

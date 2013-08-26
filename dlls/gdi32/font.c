@@ -781,6 +781,7 @@ HFONT nulldrv_SelectFont( PHYSDEV dev, HFONT font, UINT *aa_flags )
 {
     static const WCHAR desktopW[] = { 'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\',
                                       'D','e','s','k','t','o','p',0 };
+    static int orientation = -1, smoothing = -1;
     LOGFONTW lf;
     HKEY key;
 
@@ -797,14 +798,22 @@ HFONT nulldrv_SelectFont( PHYSDEV dev, HFONT font, UINT *aa_flags )
         break;
     case CLEARTYPE_QUALITY:
     case CLEARTYPE_NATURAL_QUALITY:
-        if (RegOpenKeyW( HKEY_CURRENT_USER, desktopW, &key )) break;
-        *aa_flags = get_subpixel_orientation( key );
-        RegCloseKey( key );
+        if (orientation == -1)
+        {
+            if (RegOpenKeyW( HKEY_CURRENT_USER, desktopW, &key )) break;
+            orientation = get_subpixel_orientation( key );
+            RegCloseKey( key );
+        }
+        *aa_flags = orientation;
         break;
     default:
-        if (RegOpenKeyW( HKEY_CURRENT_USER, desktopW, &key )) break;
-        *aa_flags = get_default_smoothing( key );
-        RegCloseKey( key );
+        if (smoothing == -1)
+        {
+            if (RegOpenKeyW( HKEY_CURRENT_USER, desktopW, &key )) break;
+            smoothing = get_default_smoothing( key );
+            RegCloseKey( key );
+        }
+        *aa_flags = smoothing;
         break;
     }
     return 0;
@@ -1177,7 +1186,7 @@ BOOL WINAPI GetTextExtentExPointI( HDC hdc, const WORD *indices, INT count, INT 
             for (i = 0; i < count; i++)
             {
                 unsigned int dx = abs( INTERNAL_XDSTOWS( dc, pos[i] )) + (i + 1) * dc->charExtra;
-                if (dx > (unsigned int)max_ext) break;
+                if (nfit && dx > (unsigned int)max_ext) break;
                 if (dxs) dxs[i] = dx;
             }
             if (nfit) *nfit = i;
@@ -1314,7 +1323,7 @@ BOOL WINAPI GetTextExtentExPointW( HDC hdc, LPCWSTR str, INT count, INT max_ext,
             for (i = 0; i < count; i++)
             {
                 unsigned int dx = abs( INTERNAL_XDSTOWS( dc, pos[i] )) + (i + 1) * dc->charExtra;
-                if (dx > (unsigned int)max_ext) break;
+                if (nfit && dx > (unsigned int)max_ext) break;
 		if (dxs) dxs[i] = dx;
             }
             if (nfit) *nfit = i;
