@@ -252,9 +252,6 @@ static void job_remove_process( struct process *process )
             JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
         );
     }
-    
-    release_object(job);
-    process->job = NULL;
 }
 
 static void job_destroy( struct object *obj )
@@ -573,8 +570,7 @@ static void process_destroy( struct object *obj )
     close_process_handles( process );
     set_process_startup_state( process, STARTUP_ABORTED );
     
-    job_remove_process( process );
-    
+    if (process->job) release_object( process->job );
     if (process->console) release_object( process->console );
     if (process->parent) release_object( process->parent );
     if (process->msg_fd) release_object( process->msg_fd );
@@ -1105,10 +1101,8 @@ DECL_HANDLER(new_process)
     process = thread->process;
     process->debug_children = !!(req->create_flags & DEBUG_PROCESS);
     process->startup_info = (struct startup_info *)grab_object( info );
-    if(parent->job) {
-        process->job = (struct job*)grab_object(parent->job);
+    if(parent->job)
         job_add_process(parent->job, process);
-    }
 
     /* connect to the window station */
     connect_process_winstation( process, current );
