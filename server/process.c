@@ -146,7 +146,7 @@ static struct job *create_job_object(void);
 struct job
 {
     struct object obj;             /* object header */
-    int counter;
+    struct list processes;
     apc_param_t completion_key;
     struct completion *completion;
 };
@@ -174,11 +174,12 @@ static const struct object_ops job_ops =
 static struct job *create_job_object(void)
 {
     struct job *job = (struct job*)alloc_object( &job_ops );
-    
-    job->counter = 0;
+
     job->completion_key = 0;
     job->completion = NULL;
-    
+
+    list_count(&job->processes);
+
     return job;
 }
 
@@ -221,7 +222,7 @@ static void job_add_process( struct job *job, struct process *process )
             1, /* TODO: why is this 1s */
             JOB_OBJECT_MSG_NEW_PROCESS);
     
-    job->counter++;
+    list_add_tail(&job->processes, &process->job_entry);
 }
 
 static void job_remove_process( struct process *process )
@@ -233,6 +234,8 @@ static void job_remove_process( struct process *process )
     
     assert(job->obj.ops == &job_ops);
 
+    list_remove(&process->job_entry);
+
     if(job->completion) {
         add_completion(
             job->completion,
@@ -242,15 +245,15 @@ static void job_remove_process( struct process *process )
             JOB_OBJECT_MSG_EXIT_PROCESS
         );
         
-        job->counter--;
-        
-        if(job->counter < 1) add_completion(
-            job->completion,
-            job->completion_key,
-            0,
-            1,
-            JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
-        );
+        if(list_count(&job->processes) == 0) {
+            add_completion(
+                job->completion,
+                job->completion_key,
+                0,
+                1,
+                JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
+            );
+        }
     }
 }
 
@@ -268,7 +271,7 @@ static void job_dump_info( struct object *obj, int verbose )
     struct job *job = (struct job *)obj;
     assert( obj->ops == &job_ops );
 
-    fprintf( stderr, "Job processes=%d\n", job->counter );
+    fprintf( stderr, "Job processes=%d\n", list_count(&job->processes) );
 }
 
 static int job_signaled( struct object *obj, struct thread *thread )
@@ -276,7 +279,8 @@ static int job_signaled( struct object *obj, struct thread *thread )
     struct job *job = (struct job*)obj;
     assert( obj->ops == &job_ops );
     
-    return (job->counter == 0);
+    //TODO: job object should only become signaled after a timeout
+    return list_count(&job->processes) == 0;
 }
 
 struct ptid_entry
