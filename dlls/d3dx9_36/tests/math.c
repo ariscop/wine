@@ -234,7 +234,7 @@ static void D3DXFresnelTest(void)
 static void D3DXMatrixTest(void)
 {
     D3DXMATRIX expectedmat, gotmat, mat, mat2, mat3;
-    LPD3DXMATRIX funcpointer;
+    D3DXMATRIX *funcpointer;
     D3DXPLANE plane;
     D3DXQUATERNION q, r;
     D3DXVECTOR3 at, axis, eye, last;
@@ -1250,6 +1250,9 @@ static void D3DXVector3Test(void)
 /*_______________D3DXVec3Cross________________________*/
     expectedvec.x = -18.0f; expectedvec.y = 40.0f; expectedvec.z = -39.0f;
     D3DXVec3Cross(&gotvec,&u,&v);
+    expect_vec3(expectedvec,gotvec);
+    expectedvec.x = -277.0f; expectedvec.y = -150.0f; expectedvec.z = -26.0f;
+    D3DXVec3Cross(&gotvec,&gotvec,&v);
     expect_vec3(expectedvec,gotvec);
     /* Tests the case NULL */
     funcpointer = D3DXVec3Cross(&gotvec,NULL,&v);

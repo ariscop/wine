@@ -42,7 +42,7 @@ static CRITICAL_SECTION win_data_section = { &critsect_debug, -1, 0, 0, 0, 0 };
 
 static CFMutableDictionaryRef win_datas;
 
-DWORD activate_on_focus_time;
+static DWORD activate_on_focus_time;
 
 
 void CDECL macdrv_SetFocus(HWND hwnd);
@@ -93,7 +93,6 @@ static inline BOOL can_activate_window(HWND hwnd)
 
     if (!(style & WS_VISIBLE)) return FALSE;
     if ((style & (WS_POPUP|WS_CHILD)) == WS_CHILD) return FALSE;
-    if (style & WS_MINIMIZE) return FALSE;
     if (GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE) return FALSE;
     if (hwnd == GetDesktopWindow()) return FALSE;
     if (GetWindowRect(hwnd, &rect) && IsRectEmpty(&rect)) return FALSE;
@@ -113,8 +112,9 @@ static void get_cocoa_window_state(struct macdrv_win_data *data,
     state->no_activate = !can_activate_window(data->hwnd);
     state->floating = (ex_style & WS_EX_TOPMOST) != 0;
     state->excluded_by_expose = state->excluded_by_cycle =
-        !(ex_style & WS_EX_APPWINDOW) &&
-        (GetWindow(data->hwnd, GW_OWNER) || (ex_style & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)));
+        IsRectEmpty(&data->window_rect) ||
+        (!(ex_style & WS_EX_APPWINDOW) &&
+         (GetWindow(data->hwnd, GW_OWNER) || (ex_style & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE))));
     state->minimized = (style & WS_MINIMIZE) != 0;
 }
 
@@ -332,6 +332,13 @@ static void sync_window_region(struct macdrv_win_data *data, HRGN win_region)
     if (!data->cocoa_window) return;
     data->shaped = FALSE;
 
+    if (IsRectEmpty(&data->window_rect))  /* set an empty shape */
+    {
+        TRACE("win %p/%p setting empty shape for zero-sized window\n", data->hwnd, data->cocoa_window);
+        macdrv_set_window_shape(data->cocoa_window, &CGRectZero, 1);
+        return;
+    }
+
     if (hrgn == (HRGN)1)  /* hack: win_region == 1 means retrieve region from server */
     {
         if (!(hrgn = CreateRectRgn(0, 0, 0, 0))) return;
@@ -488,11 +495,12 @@ static void create_cocoa_window(struct macdrv_win_data *data)
     data->whole_rect = data->window_rect;
     macdrv_window_to_mac_rect(data, style, &data->whole_rect);
 
-    memset(&wf, 0, sizeof(wf));
     get_cocoa_window_features(data, style, ex_style, &wf);
 
     frame = cgrect_from_rect(data->whole_rect);
     constrain_window_frame(&frame);
+    if (frame.size.width < 1 || frame.size.height < 1)
+        frame.size.width = frame.size.height = 1;
 
     TRACE("creating %p window %s whole %s client %s\n", data->hwnd, wine_dbgstr_rect(&data->window_rect),
           wine_dbgstr_rect(&data->whole_rect), wine_dbgstr_rect(&data->client_rect));
@@ -507,7 +515,7 @@ static void create_cocoa_window(struct macdrv_win_data *data)
     macdrv_set_cocoa_window_title(data->cocoa_window, text, strlenW(text));
 
     /* set the window region */
-    if (win_rgn) sync_window_region(data, win_rgn);
+    if (win_rgn || IsRectEmpty(&data->window_rect)) sync_window_region(data, win_rgn);
 
     /* set the window opacity */
     if (!GetLayeredWindowAttributes(data->hwnd, &key, &alpha, &layered_flags)) layered_flags = 0;
@@ -535,6 +543,8 @@ static void destroy_cocoa_window(struct macdrv_win_data *data)
     data->color_key = CLR_INVALID;
     if (data->surface) window_surface_release(data->surface);
     data->surface = NULL;
+    if (data->unminimized_surface) window_surface_release(data->unminimized_surface);
+    data->unminimized_surface = NULL;
 }
 
 
@@ -586,6 +596,7 @@ static void show_window(struct macdrv_win_data *data)
     HWND next = NULL;
     macdrv_window prev_window = NULL;
     macdrv_window next_window = NULL;
+    BOOL activate = FALSE;
 
     /* find window that this one must be after */
     prev = GetWindow(data->hwnd, GW_HWNDPREV);
@@ -604,12 +615,16 @@ static void show_window(struct macdrv_win_data *data)
     TRACE("win %p/%p below %p/%p above %p/%p\n",
           data->hwnd, data->cocoa_window, prev, prev_window, next, next_window);
 
-    data->on_screen = macdrv_order_cocoa_window(data->cocoa_window, prev_window, next_window);
+    if (!prev_window)
+        activate = activate_on_focus_time && (GetTickCount() - activate_on_focus_time < 2000);
+    data->on_screen = macdrv_order_cocoa_window(data->cocoa_window, prev_window, next_window, activate);
     if (data->on_screen)
     {
         HWND hwndFocus = GetFocus();
         if (hwndFocus && (data->hwnd == hwndFocus || IsChild(data->hwnd, hwndFocus)))
             macdrv_SetFocus(hwndFocus);
+        if (activate)
+            activate_on_focus_time = 0;
     }
 }
 
@@ -698,7 +713,7 @@ RGNDATA *get_region_data(HRGN hrgn, HDC hdc_lptodp)
  *
  * Synchronize the Mac window position with the Windows one
  */
-static void sync_window_position(struct macdrv_win_data *data, UINT swp_flags)
+static void sync_window_position(struct macdrv_win_data *data, UINT swp_flags, const RECT *old_window_rect)
 {
     CGRect frame;
 
@@ -706,12 +721,15 @@ static void sync_window_position(struct macdrv_win_data *data, UINT swp_flags)
 
     frame = cgrect_from_rect(data->whole_rect);
     constrain_window_frame(&frame);
+    if (frame.size.width < 1 || frame.size.height < 1)
+        frame.size.width = frame.size.height = 1;
 
     data->on_screen = macdrv_set_cocoa_window_frame(data->cocoa_window, &frame);
-    if (data->shaped) sync_window_region(data, (HRGN)1);
+    if (old_window_rect && IsRectEmpty(old_window_rect) != IsRectEmpty(&data->window_rect))
+        sync_window_region(data, (HRGN)1);
 
-    TRACE("win %p/%p pos %s\n", data->hwnd, data->cocoa_window,
-          wine_dbgstr_rect(&data->whole_rect));
+    TRACE("win %p/%p whole_rect %s frame %s\n", data->hwnd, data->cocoa_window,
+          wine_dbgstr_rect(&data->whole_rect), wine_dbgstr_cgrect(frame));
 
     if (data->on_screen && (!(swp_flags & SWP_NOZORDER) || (swp_flags & SWP_SHOWWINDOW)))
         show_window(data);
@@ -860,6 +878,7 @@ void CDECL macdrv_SetFocus(HWND hwnd)
         BOOL activate = activate_on_focus_time && (GetTickCount() - activate_on_focus_time < 2000);
         /* Set Mac focus */
         macdrv_give_cocoa_window_focus(data->cocoa_window, activate);
+        activate_on_focus_time = 0;
     }
 
     release_win_data(data);
@@ -960,7 +979,7 @@ void CDECL macdrv_SetWindowStyle(HWND hwnd, INT offset, STYLESTRUCT *style)
 {
     struct macdrv_win_data *data;
 
-    TRACE("%p, %d, %p\n", hwnd, offset, style);
+    TRACE("hwnd %p offset %d styleOld 0x%08x styleNew 0x%08x\n", hwnd, offset, style->styleOld, style->styleNew);
 
     if (hwnd == GetDesktopWindow()) return;
     if (!(data = get_win_data(hwnd))) return;
@@ -1007,6 +1026,9 @@ UINT CDECL macdrv_ShowWindow(HWND hwnd, INT cmd, RECT *rect, UINT swp)
     struct macdrv_win_data *data = get_win_data(hwnd);
     CGRect frame;
 
+    TRACE("win %p/%p cmd %d at %s flags %08x\n",
+          hwnd, data ? data->cocoa_window : NULL, cmd, wine_dbgstr_rect(rect), swp);
+
     if (!data || !data->cocoa_window) goto done;
     if (IsRectEmpty(rect)) goto done;
     if (GetWindowLongW(hwnd, GWL_STYLE) & WS_MINIMIZE)
@@ -1029,9 +1051,6 @@ UINT CDECL macdrv_ShowWindow(HWND hwnd, INT cmd, RECT *rect, UINT swp)
         thread_data->current_event->type != WINDOW_DID_MINIMIZE &&
         thread_data->current_event->type != WINDOW_DID_UNMINIMIZE)
         goto done;
-
-    TRACE("win %p/%p cmd %d at %s flags %08x\n",
-          hwnd, data->cocoa_window, cmd, wine_dbgstr_rect(rect), swp);
 
     macdrv_get_cocoa_window_frame(data->cocoa_window, &frame);
     *rect = rect_from_cgrect(frame);
@@ -1108,6 +1127,11 @@ BOOL CDECL macdrv_UpdateLayeredWindow(HWND hwnd, const UPDATELAYEREDWINDOWINFO *
         set_window_surface(data->cocoa_window, data->surface);
         if (surface) window_surface_release(surface);
         surface = data->surface;
+        if (data->unminimized_surface)
+        {
+            window_surface_release(data->unminimized_surface);
+            data->unminimized_surface = NULL;
+        }
     }
     else set_surface_use_alpha(surface, TRUE);
 
@@ -1224,7 +1248,7 @@ LRESULT CDECL macdrv_WindowMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         if ((data = get_win_data(hwnd)))
         {
             if (data->cocoa_window && data->on_screen)
-                sync_window_position(data, SWP_NOZORDER | SWP_NOACTIVATE);
+                sync_window_position(data, SWP_NOZORDER | SWP_NOACTIVATE, NULL);
             release_win_data(data);
         }
         SendMessageW(hwnd, WM_DISPLAYCHANGE, wp, lp);
@@ -1233,7 +1257,7 @@ LRESULT CDECL macdrv_WindowMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         activate_on_focus_time = GetTickCount();
         if (!activate_on_focus_time) activate_on_focus_time = 1;
         TRACE("WM_MACDRV_ACTIVATE_ON_FOLLOWING_FOCUS time %u\n", activate_on_focus_time);
-        break;
+        return 0;
     }
 
     FIXME("unrecognized window msg %x hwnd %p wp %lx lp %lx\n", msg, hwnd, wp, lp);
@@ -1333,7 +1357,23 @@ void CDECL macdrv_WindowPosChanged(HWND hwnd, HWND insert_after, UINT swp_flags,
     if (!data->ulw_layered)
     {
         if (surface) window_surface_add_ref(surface);
-        set_window_surface(data->cocoa_window, surface);
+        if (new_style & WS_MINIMIZE)
+        {
+            if (!data->unminimized_surface && data->surface)
+            {
+                data->unminimized_surface = data->surface;
+                window_surface_add_ref(data->unminimized_surface);
+            }
+        }
+        else
+        {
+            set_window_surface(data->cocoa_window, surface);
+            if (data->unminimized_surface)
+            {
+                window_surface_release(data->unminimized_surface);
+                data->unminimized_surface = NULL;
+            }
+        }
         if (data->surface) window_surface_release(data->surface);
         data->surface = surface;
     }
@@ -1394,7 +1434,7 @@ void CDECL macdrv_WindowPosChanged(HWND hwnd, HWND insert_after, UINT swp_flags,
          thread_data->current_event->type != WINDOW_DID_MINIMIZE &&
          thread_data->current_event->type != WINDOW_DID_UNMINIMIZE))
     {
-        sync_window_position(data, swp_flags);
+        sync_window_position(data, swp_flags, &old_window_rect);
         set_cocoa_window_properties(data);
     }
 
@@ -1478,7 +1518,7 @@ void macdrv_window_frame_changed(HWND hwnd, CGRect frame)
 
     if (!hwnd) return;
     if (!(data = get_win_data(hwnd))) return;
-    if (!data->on_screen)
+    if (!data->on_screen || data->minimized)
     {
         release_win_data(data);
         return;
@@ -1505,7 +1545,7 @@ void macdrv_window_frame_changed(HWND hwnd, CGRect frame)
 
     if ((data->window_rect.right - data->window_rect.left == width &&
          data->window_rect.bottom - data->window_rect.top == height) ||
-        (IsRectEmpty(&data->window_rect) && width <= 0 && height <= 0))
+        (IsRectEmpty(&data->window_rect) && width == 1 && height == 1))
         flags |= SWP_NOSIZE;
     else
         TRACE("%p resizing from (%dx%d) to (%dx%d)\n", hwnd, data->window_rect.right - data->window_rect.left,
@@ -1525,14 +1565,15 @@ void macdrv_window_frame_changed(HWND hwnd, CGRect frame)
  */
 void macdrv_window_got_focus(HWND hwnd, const macdrv_event *event)
 {
+    LONG style = GetWindowLongW(hwnd, GWL_STYLE);
+
     if (!hwnd) return;
 
     TRACE("win %p/%p serial %lu enabled %d visible %d style %08x focus %p active %p fg %p\n",
           hwnd, event->window, event->window_got_focus.serial, IsWindowEnabled(hwnd),
-          IsWindowVisible(hwnd), GetWindowLongW(hwnd, GWL_STYLE), GetFocus(),
-          GetActiveWindow(), GetForegroundWindow());
+          IsWindowVisible(hwnd), style, GetFocus(), GetActiveWindow(), GetForegroundWindow());
 
-    if (can_activate_window(hwnd))
+    if (can_activate_window(hwnd) && !(style & WS_MINIMIZE))
     {
         /* simulate a mouse click on the caption to find out
          * whether the window wants to be activated */
@@ -1564,7 +1605,11 @@ void macdrv_window_lost_focus(HWND hwnd, const macdrv_event *event)
     TRACE("win %p/%p fg %p\n", hwnd, event->window, GetForegroundWindow());
 
     if (hwnd == GetForegroundWindow())
+    {
         SendMessageW(hwnd, WM_CANCELMODE, 0, 0);
+        if (hwnd == GetForegroundWindow())
+            SetForegroundWindow(GetDesktopWindow());
+    }
 }
 
 

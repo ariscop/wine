@@ -444,20 +444,20 @@ static void initialize_launchers( HWND hwnd )
     desktop_width = GetSystemMetrics( SM_CXSCREEN );
     launchers_per_row = desktop_width / launcher_size;
 
-    hr = SHGetKnownFolderPath( &FOLDERID_Desktop, 0, NULL, &desktop_folder );
+    hr = SHGetKnownFolderPath( &FOLDERID_Desktop, KF_FLAG_CREATE, NULL, &desktop_folder );
     if (FAILED( hr ))
     {
         WINE_ERR("Could not get user desktop folder\n");
         return;
     }
-    hr = SHGetKnownFolderPath( &FOLDERID_PublicDesktop, 0, NULL, &desktop_folder_public );
+    hr = SHGetKnownFolderPath( &FOLDERID_PublicDesktop, KF_FLAG_CREATE, NULL, &desktop_folder_public );
     if (FAILED( hr ))
     {
         WINE_ERR("Could not get public desktop folder\n");
         CoTaskMemFree( desktop_folder );
         return;
     }
-    if ((launchers = HeapAlloc( GetProcessHeap(), 0, 2 * sizeof(struct launcher) )))
+    if ((launchers = HeapAlloc( GetProcessHeap(), 0, 2 * sizeof(launchers[0]) )))
     {
         nb_allocated = 2;
 
@@ -769,7 +769,7 @@ void manage_desktop( WCHAR *arg )
         initialize_display_settings( hwnd );
         initialize_appbar();
         initialize_systray( graphics_driver, using_root );
-        initialize_launchers( hwnd );
+        if (!using_root) initialize_launchers( hwnd );
 
         if ((shell32 = LoadLibraryA( "shell32.dll" )) &&
             (pShellDDEInit = (void *)GetProcAddress( shell32, (LPCSTR)188)))

@@ -22,8 +22,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3dx);
 
-static const struct ID3DXLineVtbl ID3DXLine_Vtbl;
-
 typedef struct ID3DXLineImpl {
     ID3DXLine ID3DXLine_iface;
     LONG ref;
@@ -85,7 +83,7 @@ static HRESULT WINAPI ID3DXLineImpl_GetDevice(struct ID3DXLine *iface, struct ID
 {
     ID3DXLineImpl *This = impl_from_ID3DXLine(iface);
 
-    TRACE ("(%p)->(%p): relay\n", This, device);
+    TRACE ("(%p)->(%p)\n", This, device);
 
     if (device == NULL) return D3DERR_INVALIDCALL;
 

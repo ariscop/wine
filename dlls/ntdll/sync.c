@@ -391,15 +391,34 @@ NTSTATUS WINAPI NtPulseEvent( HANDLE handle, PULONG PulseCount )
 /******************************************************************************
  *  NtQueryEvent (NTDLL.@)
  */
-NTSTATUS WINAPI NtQueryEvent (
-	IN  HANDLE EventHandle,
-	IN  EVENT_INFORMATION_CLASS EventInformationClass,
-	OUT PVOID EventInformation,
-	IN  ULONG EventInformationLength,
-	OUT PULONG  ReturnLength)
+NTSTATUS WINAPI NtQueryEvent( HANDLE handle, EVENT_INFORMATION_CLASS class,
+                              void *info, ULONG len, ULONG *ret_len )
 {
-	FIXME("(%p)\n", EventHandle);
-	return STATUS_NOT_IMPLEMENTED;
+    NTSTATUS ret;
+    EVENT_BASIC_INFORMATION *out = info;
+
+    if (class != EventBasicInformation)
+    {
+        FIXME("(%p, %d, %d) Unknown class\n",
+              handle, class, len);
+        return STATUS_INVALID_INFO_CLASS;
+    }
+
+    if (len != sizeof(EVENT_BASIC_INFORMATION)) return STATUS_INFO_LENGTH_MISMATCH;
+
+    SERVER_START_REQ( query_event )
+    {
+        req->handle = wine_server_obj_handle( handle );
+        if (!(ret = wine_server_call( req )))
+        {
+            out->EventType  = reply->manual_reset ? NotificationEvent : SynchronizationEvent;
+            out->EventState = reply->state;
+            if (ret_len) *ret_len = sizeof(EVENT_BASIC_INFORMATION);
+        }
+    }
+    SERVER_END_REQ;
+
+    return ret;
 }
 
 /*
@@ -1293,6 +1312,88 @@ NTSTATUS WINAPI NtDelayExecution( BOOLEAN alertable, const LARGE_INTEGER *timeou
     return STATUS_SUCCESS;
 }
 
+
+/******************************************************************************
+ *              NtCreateKeyedEvent (NTDLL.@)
+ */
+NTSTATUS WINAPI NtCreateKeyedEvent( HANDLE *handle, ACCESS_MASK access,
+                                    const OBJECT_ATTRIBUTES *attr, ULONG flags )
+{
+    DWORD len = attr && attr->ObjectName ? attr->ObjectName->Length : 0;
+    NTSTATUS ret;
+    struct security_descriptor *sd = NULL;
+    struct object_attributes objattr;
+
+    if (len >= MAX_PATH * sizeof(WCHAR)) return STATUS_NAME_TOO_LONG;
+
+    objattr.rootdir = wine_server_obj_handle( attr ? attr->RootDirectory : 0 );
+    objattr.sd_len = 0;
+    objattr.name_len = len;
+    if (attr)
+    {
+        ret = NTDLL_create_struct_sd( attr->SecurityDescriptor, &sd, &objattr.sd_len );
+        if (ret != STATUS_SUCCESS) return ret;
+    }
+
+    SERVER_START_REQ( create_keyed_event )
+    {
+        req->access = access;
+        req->attributes = attr ? attr->Attributes : 0;
+        wine_server_add_data( req, &objattr, sizeof(objattr) );
+        if (objattr.sd_len) wine_server_add_data( req, sd, objattr.sd_len );
+        if (len) wine_server_add_data( req, attr->ObjectName->Buffer, len );
+        ret = wine_server_call( req );
+        *handle = wine_server_ptr_handle( reply->handle );
+    }
+    SERVER_END_REQ;
+
+    NTDLL_free_struct_sd( sd );
+    return ret;
+}
+
+/******************************************************************************
+ *              NtOpenKeyedEvent (NTDLL.@)
+ */
+NTSTATUS WINAPI NtOpenKeyedEvent( HANDLE *handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr )
+{
+    DWORD len = attr && attr->ObjectName ? attr->ObjectName->Length : 0;
+    NTSTATUS ret;
+
+    if (len >= MAX_PATH * sizeof(WCHAR)) return STATUS_NAME_TOO_LONG;
+
+    SERVER_START_REQ( open_keyed_event )
+    {
+        req->access  = access;
+        req->attributes = attr ? attr->Attributes : 0;
+        req->rootdir = wine_server_obj_handle( attr ? attr->RootDirectory : 0 );
+        if (len) wine_server_add_data( req, attr->ObjectName->Buffer, len );
+        ret = wine_server_call( req );
+        *handle = wine_server_ptr_handle( reply->handle );
+    }
+    SERVER_END_REQ;
+    return ret;
+}
+
+/******************************************************************************
+ *              NtWaitForKeyedEvent (NTDLL.@)
+ */
+NTSTATUS WINAPI NtWaitForKeyedEvent( HANDLE handle, const void *key,
+                                     BOOLEAN alertable, const LARGE_INTEGER *timeout )
+{
+    FIXME( "stub\n" );
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+/******************************************************************************
+ *              NtReleaseKeyedEvent (NTDLL.@)
+ */
+NTSTATUS WINAPI NtReleaseKeyedEvent( HANDLE handle, const void *key,
+                                     BOOLEAN alertable, const LARGE_INTEGER *timeout )
+{
+    FIXME( "stub\n" );
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 /******************************************************************
  *              NtCreateIoCompletion (NTDLL.@)
  *              ZwCreateIoCompletion (NTDLL.@)
@@ -1348,11 +1449,11 @@ NTSTATUS WINAPI NtCreateIoCompletion( PHANDLE CompletionPort, ACCESS_MASK Desire
  */
 NTSTATUS WINAPI NtSetIoCompletion( HANDLE CompletionPort, ULONG_PTR CompletionKey,
                                    ULONG_PTR CompletionValue, NTSTATUS Status,
-                                   ULONG NumberOfBytesTransferred )
+                                   SIZE_T NumberOfBytesTransferred )
 {
     NTSTATUS status;
 
-    TRACE("(%p, %lx, %lx, %x, %d)\n", CompletionPort, CompletionKey,
+    TRACE("(%p, %lx, %lx, %x, %lx)\n", CompletionPort, CompletionKey,
           CompletionValue, Status, NumberOfBytesTransferred);
 
     SERVER_START_REQ( add_completion )

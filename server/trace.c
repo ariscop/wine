@@ -1413,6 +1413,17 @@ static void dump_event_op_request( const struct event_op_request *req )
     fprintf( stderr, ", op=%d", req->op );
 }
 
+static void dump_query_event_request( const struct query_event_request *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
+static void dump_query_event_reply( const struct query_event_reply *req )
+{
+    fprintf( stderr, " manual_reset=%d", req->manual_reset );
+    fprintf( stderr, ", state=%d", req->state );
+}
+
 static void dump_open_event_request( const struct open_event_request *req )
 {
     fprintf( stderr, " access=%08x", req->access );
@@ -1422,6 +1433,31 @@ static void dump_open_event_request( const struct open_event_request *req )
 }
 
 static void dump_open_event_reply( const struct open_event_reply *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
+static void dump_create_keyed_event_request( const struct create_keyed_event_request *req )
+{
+    fprintf( stderr, " access=%08x", req->access );
+    fprintf( stderr, ", attributes=%08x", req->attributes );
+    dump_varargs_object_attributes( ", objattr=", cur_size );
+}
+
+static void dump_create_keyed_event_reply( const struct create_keyed_event_reply *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
+static void dump_open_keyed_event_request( const struct open_keyed_event_request *req )
+{
+    fprintf( stderr, " access=%08x", req->access );
+    fprintf( stderr, ", attributes=%08x", req->attributes );
+    fprintf( stderr, ", rootdir=%04x", req->rootdir );
+    dump_varargs_unicode_str( ", name=", cur_size );
+}
+
+static void dump_open_keyed_event_reply( const struct open_keyed_event_reply *req )
 {
     fprintf( stderr, " handle=%04x", req->handle );
 }
@@ -3883,7 +3919,7 @@ static void dump_add_completion_request( const struct add_completion_request *re
     fprintf( stderr, " handle=%04x", req->handle );
     dump_uint64( ", ckey=", &req->ckey );
     dump_uint64( ", cvalue=", &req->cvalue );
-    fprintf( stderr, ", information=%08x", req->information );
+    dump_uint64( ", information=", &req->information );
     fprintf( stderr, ", status=%08x", req->status );
 }
 
@@ -3896,7 +3932,7 @@ static void dump_remove_completion_reply( const struct remove_completion_reply *
 {
     dump_uint64( " ckey=", &req->ckey );
     dump_uint64( ", cvalue=", &req->cvalue );
-    fprintf( stderr, ", information=%08x", req->information );
+    dump_uint64( ", information=", &req->information );
     fprintf( stderr, ", status=%08x", req->status );
 }
 
@@ -3921,8 +3957,8 @@ static void dump_add_fd_completion_request( const struct add_fd_completion_reque
 {
     fprintf( stderr, " handle=%04x", req->handle );
     dump_uint64( ", cvalue=", &req->cvalue );
+    dump_uint64( ", information=", &req->information );
     fprintf( stderr, ", status=%08x", req->status );
-    fprintf( stderr, ", information=%08x", req->information );
 }
 
 static void dump_get_window_layered_info_request( const struct get_window_layered_info_request *req )
@@ -4032,7 +4068,10 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_select_request,
     (dump_func)dump_create_event_request,
     (dump_func)dump_event_op_request,
+    (dump_func)dump_query_event_request,
     (dump_func)dump_open_event_request,
+    (dump_func)dump_create_keyed_event_request,
+    (dump_func)dump_open_keyed_event_request,
     (dump_func)dump_create_mutex_request,
     (dump_func)dump_release_mutex_request,
     (dump_func)dump_open_mutex_request,
@@ -4287,7 +4326,10 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_select_reply,
     (dump_func)dump_create_event_reply,
     NULL,
+    (dump_func)dump_query_event_reply,
     (dump_func)dump_open_event_reply,
+    (dump_func)dump_create_keyed_event_reply,
+    (dump_func)dump_open_keyed_event_reply,
     (dump_func)dump_create_mutex_reply,
     (dump_func)dump_release_mutex_reply,
     (dump_func)dump_open_mutex_reply,
@@ -4542,7 +4584,10 @@ static const char * const req_names[REQ_NB_REQUESTS] = {
     "select",
     "create_event",
     "event_op",
+    "query_event",
     "open_event",
+    "create_keyed_event",
+    "open_keyed_event",
     "create_mutex",
     "release_mutex",
     "open_mutex",

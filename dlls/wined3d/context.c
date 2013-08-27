@@ -1345,6 +1345,12 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
     list_init(&ret->fbo_list);
     list_init(&ret->fbo_destroy_list);
 
+    if (!device->shader_backend->shader_allocate_context_data(ret))
+    {
+        ERR("Failed to allocate shader backend context data.\n");
+        goto out;
+    }
+
     if (!(hdc = GetDC(swapchain->win_handle)))
     {
         WARN("Failed to retireve device context, trying swapchain backup.\n");
@@ -1564,13 +1570,6 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
     gl_info->gl_ops.gl.p_glPixelStorei(GL_UNPACK_ALIGNMENT, device->surface_alignment);
     checkGLcall("glPixelStorei(GL_UNPACK_ALIGNMENT, device->surface_alignment);");
 
-    if (gl_info->supported[APPLE_CLIENT_STORAGE])
-    {
-        /* Most textures will use client storage if supported. Exceptions are
-         * non-native power of 2 textures and textures in DIB sections. */
-        gl_info->gl_ops.gl.p_glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_TRUE);
-        checkGLcall("glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_TRUE)");
-    }
     if (gl_info->supported[ARB_VERTEX_BLEND])
     {
         /* Direct3D always uses n-1 weights for n world matrices and uses
@@ -1631,7 +1630,9 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
     {
         GL_EXTCALL(glProvokingVertexEXT(GL_FIRST_VERTEX_CONVENTION_EXT));
     }
-    ret->select_shader = 1;
+    ret->shader_update_mask = (1 << WINED3D_SHADER_TYPE_PIXEL)
+            | (1 << WINED3D_SHADER_TYPE_VERTEX)
+            | (1 << WINED3D_SHADER_TYPE_GEOMETRY);
 
     /* If this happens to be the first context for the device, dummy textures
      * are not created yet. In that case, they will be created (and bound) by
@@ -1644,6 +1645,7 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
     return ret;
 
 out:
+    device->shader_backend->shader_free_context_data(ret);
     HeapFree(GetProcessHeap(), 0, ret->free_event_queries);
     HeapFree(GetProcessHeap(), 0, ret->free_occlusion_queries);
     HeapFree(GetProcessHeap(), 0, ret->draw_buffers);
@@ -1676,6 +1678,7 @@ void context_destroy(struct wined3d_device *device, struct wined3d_context *cont
         destroy = FALSE;
     }
 
+    device->shader_backend->shader_free_context_data(context);
     HeapFree(GetProcessHeap(), 0, context->draw_buffers);
     HeapFree(GetProcessHeap(), 0, context->blit_targets);
     device_context_remove(device, context);
@@ -1908,8 +1911,6 @@ static void SetupForBlit(const struct wined3d_device *device, struct wined3d_con
 
     /* Disable shaders */
     device->shader_backend->shader_disable(device->shader_priv, context);
-    context->select_shader = 1;
-    context->load_constants = 1;
 
     context->blit_w = rt_size.cx;
     context->blit_h = rt_size.cy;
@@ -2387,17 +2388,16 @@ BOOL context_apply_draw_state(struct wined3d_context *context, struct wined3d_de
         state_table[rep].apply(context, state, rep);
     }
 
-    if (context->select_shader)
+    if (context->shader_update_mask)
     {
         device->shader_backend->shader_select(device->shader_priv, context, state);
-        context->select_shader = 0;
+        context->shader_update_mask = 0;
     }
 
-    if (context->load_constants)
+    if (context->constant_update_mask)
     {
-        device->shader_backend->shader_load_constants(device->shader_priv,
-                context, state);
-        context->load_constants = 0;
+        device->shader_backend->shader_load_constants(device->shader_priv, context, state);
+        context->constant_update_mask = 0;
     }
 
     if (wined3d_settings.offscreen_rendering_mode == ORM_FBO)

@@ -35,8 +35,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3dx);
 
-static const ID3DXMatrixStackVtbl ID3DXMatrixStack_Vtbl;
-
 struct ID3DXMatrixStackImpl
 {
   ID3DXMatrixStack ID3DXMatrixStack_iface;
@@ -47,6 +45,7 @@ struct ID3DXMatrixStackImpl
   D3DXMATRIX *stack;
 };
 
+static const unsigned int INITIAL_STACK_SIZE = 32;
 
 /*_________________D3DXColor____________________*/
 
@@ -102,13 +101,6 @@ D3DXMATRIX * WINAPI D3DXMatrixAffineTransformation(D3DXMATRIX *out, FLOAT scalin
 
     D3DXMatrixIdentity(out);
 
-    if (rotationcenter)
-    {
-        out->u.m[3][0] = -rotationcenter->x;
-        out->u.m[3][1] = -rotationcenter->y;
-        out->u.m[3][2] = -rotationcenter->z;
-    }
-
     if (rotation)
     {
         FLOAT temp00, temp01, temp02, temp10, temp11, temp12, temp20, temp21, temp22;
@@ -135,15 +127,12 @@ D3DXMATRIX * WINAPI D3DXMatrixAffineTransformation(D3DXMATRIX *out, FLOAT scalin
 
         if (rotationcenter)
         {
-            FLOAT x, y, z;
-
-            x = out->u.m[3][0];
-            y = out->u.m[3][1];
-            z = out->u.m[3][2];
-
-            out->u.m[3][0] = x * temp00 + y * temp10 + z * temp20;
-            out->u.m[3][1] = x * temp01 + y * temp11 + z * temp21;
-            out->u.m[3][2] = x * temp02 + y * temp12 + z * temp22;
+            out->u.m[3][0] = rotationcenter->x * (1.0f - temp00) - rotationcenter->y * temp10
+                    - rotationcenter->z * temp20;
+            out->u.m[3][1] = rotationcenter->y * (1.0f - temp11) - rotationcenter->x * temp01
+                    - rotationcenter->z * temp21;
+            out->u.m[3][2] = rotationcenter->z * (1.0f - temp22) - rotationcenter->x * temp02
+                    - rotationcenter->y * temp12;
         }
     }
     else
@@ -151,13 +140,6 @@ D3DXMATRIX * WINAPI D3DXMatrixAffineTransformation(D3DXMATRIX *out, FLOAT scalin
         out->u.m[0][0] = scaling;
         out->u.m[1][1] = scaling;
         out->u.m[2][2] = scaling;
-    }
-
-    if (rotationcenter)
-    {
-        out->u.m[3][0] += rotationcenter->x;
-        out->u.m[3][1] += rotationcenter->y;
-        out->u.m[3][2] += rotationcenter->z;
     }
 
     if (translation)
@@ -947,40 +929,6 @@ D3DXMATRIX* WINAPI D3DXMatrixTranspose(D3DXMATRIX *pout, const D3DXMATRIX *pm)
 
 /*_________________D3DXMatrixStack____________________*/
 
-static const unsigned int INITIAL_STACK_SIZE = 32;
-
-HRESULT WINAPI D3DXCreateMatrixStack(DWORD flags, ID3DXMatrixStack **ppstack)
-{
-    struct ID3DXMatrixStackImpl *object;
-
-    TRACE("flags %#x, ppstack %p\n", flags, ppstack);
-
-    object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
-    if (object == NULL)
-    {
-        *ppstack = NULL;
-        return E_OUTOFMEMORY;
-    }
-    object->ID3DXMatrixStack_iface.lpVtbl = &ID3DXMatrixStack_Vtbl;
-    object->ref = 1;
-
-    object->stack = HeapAlloc(GetProcessHeap(), 0, INITIAL_STACK_SIZE * sizeof(*object->stack));
-    if (!object->stack)
-    {
-        HeapFree(GetProcessHeap(), 0, object);
-        *ppstack = NULL;
-        return E_OUTOFMEMORY;
-    }
-
-    object->current = 0;
-    object->stack_size = INITIAL_STACK_SIZE;
-    D3DXMatrixIdentity(&object->stack[0]);
-
-    TRACE("Created matrix stack %p\n", object);
-
-    *ppstack = &object->ID3DXMatrixStack_iface;
-    return D3D_OK;
-}
 
 static inline struct ID3DXMatrixStackImpl *impl_from_ID3DXMatrixStack(ID3DXMatrixStack *iface)
 {
@@ -1259,6 +1207,37 @@ static const ID3DXMatrixStackVtbl ID3DXMatrixStack_Vtbl =
     ID3DXMatrixStackImpl_TranslateLocal,
     ID3DXMatrixStackImpl_GetTop
 };
+
+HRESULT WINAPI D3DXCreateMatrixStack(DWORD flags, ID3DXMatrixStack **stack)
+{
+    struct ID3DXMatrixStackImpl *object;
+
+    TRACE("flags %#x, stack %p.\n", flags, stack);
+
+    if (!(object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object))))
+    {
+        *stack = NULL;
+        return E_OUTOFMEMORY;
+    }
+    object->ID3DXMatrixStack_iface.lpVtbl = &ID3DXMatrixStack_Vtbl;
+    object->ref = 1;
+
+    if (!(object->stack = HeapAlloc(GetProcessHeap(), 0, INITIAL_STACK_SIZE * sizeof(*object->stack))))
+    {
+        HeapFree(GetProcessHeap(), 0, object);
+        *stack = NULL;
+        return E_OUTOFMEMORY;
+    }
+
+    object->current = 0;
+    object->stack_size = INITIAL_STACK_SIZE;
+    D3DXMatrixIdentity(&object->stack[0]);
+
+    TRACE("Created matrix stack %p.\n", object);
+
+    *stack = &object->ID3DXMatrixStack_iface;
+    return D3D_OK;
+}
 
 /*_________________D3DXPLANE________________*/
 
