@@ -538,7 +538,7 @@ NTSTATUS WINAPI NtQueryMutant(IN HANDLE handle,
 NTSTATUS WINAPI NtCreateJobObject( PHANDLE handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr )
 {
     NTSTATUS status;
-    
+
     FIXME( "(%p, %x, %s): Partial stub\n", handle, access, attr ? debugstr_us(attr->ObjectName) : "NULL" );
 
     SERVER_START_REQ( create_job )
@@ -548,7 +548,7 @@ NTSTATUS WINAPI NtCreateJobObject( PHANDLE handle, ACCESS_MASK access, const OBJ
             *handle = wine_server_ptr_handle(reply->handle);
     }
     SERVER_END_REQ;
-    
+
     return status;
 }
 

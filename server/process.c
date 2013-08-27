@@ -211,9 +211,9 @@ static unsigned int job_map_access( struct object *obj, unsigned int access )
 #define JOB_OBJECT_MSG_EXIT_PROCESS 7
 
 static void job_add_process( struct job *job, struct process *process )
-{ 
+{
     process->job = (struct job*)grab_object(job);
-    
+
     if(job->completion)
         add_completion(
             job->completion,
@@ -221,7 +221,7 @@ static void job_add_process( struct job *job, struct process *process )
             get_process_id( process ),
             1, /* TODO: why is this 1s */
             JOB_OBJECT_MSG_NEW_PROCESS);
-    
+
     list_add_tail(&job->processes, &process->job_entry);
 }
 
