@@ -87,14 +87,16 @@ static void test_completion(void) {
     process[0] = getProcess(&hprocess[0]);
     process[1] = getProcess(&hprocess[1]);
 
-    ret = pNtIsProcessInJob(hprocess[0], JobObject);
-    ok(ret == STATUS_PROCESS_NOT_IN_JOB, "NtIsProcessInJob: expected STATUS_PROCESS_IN_JOB, got %x\n", ret);
+    if(pNtIsProcessInJob)
+        todo_wine ok(pNtIsProcessInJob(hprocess[0], JobObject) == STATUS_PROCESS_NOT_IN_JOB,
+            "NtIsProcessInJob: expected STATUS_PROCESS_NOT_IN_JOB, got %x\n", ret);
 
     ret = pNtAssignProcessToJobObject(JobObject, hprocess[0]);
     ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject: %x\n", ret);
 
-    ret = pNtIsProcessInJob(hprocess[0], JobObject);
-    ok(ret == STATUS_PROCESS_IN_JOB, "NtIsProcessInJob: expected STATUS_PROCESS_IN_JOB, got %x\n", ret);
+    if(pNtIsProcessInJob)
+        todo_wine ok(pNtIsProcessInJob(hprocess[0], JobObject) == STATUS_PROCESS_IN_JOB,
+            "NtIsProcessInJob: expected STATUS_PROCESS_IN_JOB, got %x\n", ret);
 
     ret = pNtAssignProcessToJobObject(JobObject, hprocess[1]);
     ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject: %x\n", ret);
@@ -104,8 +106,9 @@ static void test_completion(void) {
     ok(TerminateProcess(hprocess[1], 2), "TerminateProcess: %x\n", GetLastError());
     Sleep(1000);
 
-    ret = pNtIsProcessInJob(hprocess[0], JobObject);
-    todo_wine ok(ret == STATUS_PROCESS_IN_JOB, "NtIsProcessInJob: expected STATUS_PROCESS_IN_JOB, got %x\n", ret);
+    if(pNtIsProcessInJob)
+        todo_wine ok(pNtIsProcessInJob(hprocess[0], JobObject) == STATUS_PROCESS_IN_JOB,
+            "NtIsProcessInJob: expected STATUS_PROCESS_IN_JOB, got %x\n", ret);
 
     process[2] = getProcess(&hprocess[2]);
     process[3] = getProcess(&hprocess[3]);
