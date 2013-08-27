@@ -539,7 +539,7 @@ NTSTATUS WINAPI NtCreateJobObject( PHANDLE handle, ACCESS_MASK access, const OBJ
 {
     NTSTATUS status;
     
-    FIXME( "(%p, %x, %s): Semi stub\n", handle, access, attr ? debugstr_us(attr->ObjectName) : "" );
+    FIXME( "(%p, %x, %s): Partial stub\n", handle, access, attr ? debugstr_us(attr->ObjectName) : "NULL" );
 
     SERVER_START_REQ( create_job )
     {
