@@ -29,38 +29,32 @@
 #include "wine/test.h"
 
 HMODULE hntdll;
-
-static DWORD getProcess(PHANDLE handle) {
-	STARTUPINFO startup = {};
-    PROCESS_INFORMATION info = {};
-
-	if(!CreateProcessA(NULL, GetCommandLine(), NULL, NULL, FALSE, 0, NULL, NULL, &startup, &info)) {
-        ok(FALSE, "CreateProcess: %x\n", GetLastError());
-		return 0;
-    }
-
-	CloseHandle(info.hThread);
-    *handle = info.hProcess;
-
-	return info.dwProcessId;
-};
-
-typedef struct _JOBOBJECT_ASSOCIATE_COMPLETION_PORT {
-  PVOID  CompletionKey;
-  HANDLE CompletionPort;
-} JOBOBJECT_ASSOCIATE_COMPLETION_PORT, *PJOBOBJECT_ASSOCIATE_COMPLETION_PORT;
-
 static NTSTATUS (WINAPI *pNtCreateJobObject)( PHANDLE handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr );
 static NTSTATUS (WINAPI *pNtSetInformationJobObject)( HANDLE handle, JOBOBJECTINFOCLASS klass, PVOID info, ULONG len );
 static NTSTATUS (WINAPI *pNtAssignProcessToJobObject)( HANDLE job, HANDLE process );
 static NTSTATUS (WINAPI *pNtIsProcessInJob)( HANDLE process, HANDLE job );
 static NTSTATUS (WINAPI *pNtTerminateJobObject)( HANDLE job, NTSTATUS status );
 
+static DWORD getProcess(PHANDLE handle) {
+    STARTUPINFO startup = {};
+    PROCESS_INFORMATION info = {};
+
+    if(!CreateProcessA(NULL, GetCommandLine(), NULL, NULL, FALSE, 0, NULL, NULL, &startup, &info)) {
+        ok(FALSE, "CreateProcess: %x\n", GetLastError());
+        return 0;
+    }
+
+    CloseHandle(info.hThread);
+    *handle = info.hProcess;
+
+    return info.dwProcessId;
+}
+
 static void test_completion_response(HANDLE IOPort, DWORD eKey, ULONG_PTR eVal, LPOVERLAPPED eOverlap)
 {
     DWORD CompletionKey, ret;
-	ULONG_PTR CompletionValue;
-	LPOVERLAPPED Overlapped;
+    ULONG_PTR CompletionValue;
+    LPOVERLAPPED Overlapped;
 
     ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, 0);
     ok(ret, "GetQueuedCompletionStatus: %x\n", GetLastError());
@@ -87,7 +81,7 @@ static void test_completion(void) {
 
     Port.CompletionKey = JobObject;
     Port.CompletionPort = IOPort;
-    ret = pNtSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation,	&Port, sizeof(Port));
+    ret = pNtSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation,    &Port, sizeof(Port));
     ok(ret == STATUS_SUCCESS, "NtCreateJobObject: %x\n", ret);
 
     process[0] = getProcess(&hprocess[0]);
@@ -160,10 +154,10 @@ START_TEST(job)
 
     hntdll = GetModuleHandleA("ntdll.dll");
     pNtCreateJobObject = (void*)GetProcAddress(hntdll, "NtCreateJobObject");
-	pNtSetInformationJobObject = (void*)GetProcAddress(hntdll, "NtSetInformationJobObject");
-	pNtAssignProcessToJobObject = (void*)GetProcAddress(hntdll, "NtAssignProcessToJobObject");
-	pNtIsProcessInJob = (void*)GetProcAddress(hntdll, "NtIsProcessInJob");
-	pNtTerminateJobObject = (void*)GetProcAddress(hntdll, "NtTerminateJobObject");
+    pNtSetInformationJobObject = (void*)GetProcAddress(hntdll, "NtSetInformationJobObject");
+    pNtAssignProcessToJobObject = (void*)GetProcAddress(hntdll, "NtAssignProcessToJobObject");
+    pNtIsProcessInJob = (void*)GetProcAddress(hntdll, "NtIsProcessInJob");
+    pNtTerminateJobObject = (void*)GetProcAddress(hntdll, "NtTerminateJobObject");
 
     test_completion();
 }

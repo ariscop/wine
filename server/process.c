@@ -228,10 +228,10 @@ static void job_add_process( struct job *job, struct process *process )
 static void job_remove_process( struct process *process )
 {
     struct job *job = process->job;
-    
+
     if(!job)
         return;
-    
+
     assert(job->obj.ops == &job_ops);
 
     list_remove(&process->job_entry);
@@ -244,7 +244,7 @@ static void job_remove_process( struct process *process )
             1, /* TODO: why is this 1s */
             JOB_OBJECT_MSG_EXIT_PROCESS
         );
-        
+
         if(list_count(&job->processes) == 0) {
             add_completion(
                 job->completion,
@@ -261,7 +261,7 @@ static void job_destroy( struct object *obj )
 {
     struct job *job = (struct job*)obj;
     assert(obj->ops == &job_ops);
-    
+
     if(job->completion)
         release_object(job->completion);
 }
@@ -278,7 +278,7 @@ static int job_signaled( struct object *obj, struct thread *thread )
 {
     struct job *job = (struct job*)obj;
     assert( obj->ops == &job_ops );
-    
+
     /* TODO: job object should only become signaled after a timeout */
     return list_count(&job->processes) == 0;
 }
@@ -573,7 +573,7 @@ static void process_destroy( struct object *obj )
 
     close_process_handles( process );
     set_process_startup_state( process, STARTUP_ABORTED );
-    
+
     if (process->job) release_object( process->job );
     if (process->console) release_object( process->console );
     if (process->parent) release_object( process->parent );
@@ -1445,9 +1445,9 @@ DECL_HANDLER(make_process_system)
 DECL_HANDLER(create_job)
 {
     struct job *job;
-    
+
     job = create_job_object();
-    
+
     if(job) {
         reply->handle = alloc_handle( current->process, (struct object*)job, 0, 0);
         release_object(job);
@@ -1463,12 +1463,12 @@ DECL_HANDLER(job_assign)
 
     if(!(job = get_job_from_handle( current->process, req->job_handle, JOB_OBJECT_ASSIGN_PROCESS )))
         return;
-    
+
     if(!(process = get_process_from_handle( req->process_handle, PROCESS_SET_QUOTA|PROCESS_TERMINATE )))
         goto error;
-    
+
     job_add_process( job, process );
-    
+
     release_object(process);
 error:
     release_object(job);
@@ -1508,15 +1508,15 @@ DECL_HANDLER(terminate_job)
 
     if(!(job = get_job_from_handle( current->process, req->handle, JOB_OBJECT_TERMINATE )))
         return;
-    
+
     completion = job->completion;
     job->completion = NULL;
-    
+
     LIST_FOR_EACH_ENTRY(process, &job->processes, struct process, job_entry )
     {
         terminate_process(process, NULL, req->status);
     }
-    
+
     job->completion = completion;
     if(job->completion)
     {
@@ -1527,7 +1527,7 @@ DECL_HANDLER(terminate_job)
             JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
         );
     }
-    
+
     release_object(job);
 }
 
@@ -1535,15 +1535,15 @@ DECL_HANDLER(job_set_completion)
 {
     struct job *job;
     struct completion *completion;
-    
+
     if(!(job = get_job_from_handle( current->process, req->handle, JOB_OBJECT_ASSIGN_PROCESS )))
         return;
-    
+
     if(!(completion = get_completion_obj( current->process, req->CompletionPort, JOB_OBJECT_SET_ATTRIBUTES ))) {
         release_object(job);
         return;
     }
-    
+
     job->completion_key = req->CompletionKey;
     job->completion = completion;
 

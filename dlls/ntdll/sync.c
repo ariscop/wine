@@ -569,7 +569,7 @@ NTSTATUS WINAPI NtOpenJobObject( PHANDLE handle, ACCESS_MASK access, const OBJEC
 NTSTATUS WINAPI NtTerminateJobObject( HANDLE handle, NTSTATUS status )
 {
     NTSTATUS ret;
-    
+
     TRACE( "(%p, %d)\n", handle, status );
 
     SERVER_START_REQ( terminate_job )
@@ -579,7 +579,7 @@ NTSTATUS WINAPI NtTerminateJobObject( HANDLE handle, NTSTATUS status )
         ret = wine_server_call( req );
     }
     SERVER_END_REQ;
-    
+
     return ret;
 }
 
@@ -594,11 +594,6 @@ NTSTATUS WINAPI NtQueryInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS c
     return STATUS_NOT_IMPLEMENTED;
 }
 
-typedef struct _JOBOBJECT_ASSOCIATE_COMPLETION_PORT {
-  PVOID  CompletionKey;
-  HANDLE CompletionPort;
-} JOBOBJECT_ASSOCIATE_COMPLETION_PORT, *PJOBOBJECT_ASSOCIATE_COMPLETION_PORT;
-
 /******************************************************************************
  *              NtSetInformationJobObject   [NTDLL.@]
  *              ZwSetInformationJobObject   [NTDLL.@]
@@ -607,16 +602,16 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
 {
     NTSTATUS status;
     PJOBOBJECT_ASSOCIATE_COMPLETION_PORT cInfo;
-    
+
     TRACE( "(%p, %u, %p, %u)\n", handle, class, info, len );
-    
+
     if(class == JobObjectAssociateCompletionPortInformation)
     {
         if(len != sizeof(JOBOBJECT_ASSOCIATE_COMPLETION_PORT))
             return STATUS_INVALID_PARAMETER;
-        
+
         cInfo = (PJOBOBJECT_ASSOCIATE_COMPLETION_PORT)info;
-        
+
         SERVER_START_REQ( job_set_completion )
         {
             req->handle = wine_server_obj_handle(handle);
@@ -630,7 +625,7 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
     {
         status = STATUS_INVALID_INFO_CLASS;
     }
-    
+
     return status;
 }
 
@@ -662,7 +657,7 @@ NTSTATUS WINAPI NtAssignProcessToJobObject( HANDLE job, HANDLE process )
 {
     NTSTATUS status;
     TRACE( "(%p %p)\n", job, process );
-    
+
     SERVER_START_REQ( job_assign )
     {
         req->job_handle = wine_server_obj_handle(job);
@@ -670,7 +665,7 @@ NTSTATUS WINAPI NtAssignProcessToJobObject( HANDLE job, HANDLE process )
         status = wine_server_call(req);
     }
     SERVER_END_REQ;
-    
+
     return status;
 }
 
