@@ -620,7 +620,7 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
         SERVER_START_REQ( job_set_completion )
         {
             req->handle = wine_server_obj_handle(handle);
-            req->CompletionKey = cInfo->CompletionKey;
+            req->CompletionKey = wine_server_client_ptr(cInfo->CompletionKey);
             req->CompletionPort = wine_server_obj_handle(cInfo->CompletionPort);
             status = wine_server_call(req);
         }

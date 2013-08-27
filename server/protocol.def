@@ -682,8 +682,8 @@ struct rawinput_device
 
 @REQ(job_set_completion)
     obj_handle_t handle;
-    unsigned int CompletionKey;
-    unsigned int CompletionPort;
+    client_ptr_t CompletionKey;
+    obj_handle_t CompletionPort;
 @END
 
 /* Retrieve information about a newly started process */

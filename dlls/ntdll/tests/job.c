@@ -20,6 +20,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
@@ -72,7 +73,7 @@ static void test_completion_response(HANDLE IOPort, DWORD eKey, ULONG_PTR eVal, 
 
 static void test_completion(void) {
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
-    DWORD process[4];
+    intptr_t process[4];
     HANDLE hprocess[4];
     HANDLE JobObject;
     HANDLE IOPort;

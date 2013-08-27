@@ -702,8 +702,9 @@ struct job_set_completion_request
 {
     struct request_header __header;
     obj_handle_t handle;
-    unsigned int CompletionKey;
-    unsigned int CompletionPort;
+    client_ptr_t CompletionKey;
+    obj_handle_t CompletionPort;
+    char __pad_28[4];
 };
 struct job_set_completion_reply
 {
@@ -5845,6 +5846,6 @@ union generic_reply
     struct set_suspend_context_reply set_suspend_context_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 445
+#define SERVER_PROTOCOL_VERSION 446
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

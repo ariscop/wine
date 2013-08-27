@@ -1108,8 +1108,8 @@ static void dump_job_assign_request( const struct job_assign_request *req )
 static void dump_job_set_completion_request( const struct job_set_completion_request *req )
 {
     fprintf( stderr, " handle=%04x", req->handle );
-    fprintf( stderr, ", CompletionKey=%08x", req->CompletionKey );
-    fprintf( stderr, ", CompletionPort=%08x", req->CompletionPort );
+    dump_uint64( ", CompletionKey=", &req->CompletionKey );
+    fprintf( stderr, ", CompletionPort=%04x", req->CompletionPort );
 }
 
 static void dump_get_new_process_info_request( const struct get_new_process_info_request *req )

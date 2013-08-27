@@ -197,11 +197,11 @@ static struct object_type *job_get_type( struct object *obj )
 
 static unsigned int job_map_access( struct object *obj, unsigned int access )
 {
-    /* TODO: Access rights */
-/*  if (access & GENERIC_READ)    access |= 
-    if (access & GENERIC_WRITE)   access |= 
-    if (access & GENERIC_EXECUTE) access |= 
-    if (access & GENERIC_ALL)     access |= */
+    /* TODO: Check permissions */
+    /* if (access & GENERIC_READ)    access |= STANDARD_RIGHTS_READ;
+       if (access & GENERIC_WRITE)   access |= STANDARD_RIGHTS_WRITE;
+       if (access & GENERIC_EXECUTE) access |= STANDARD_RIGHTS_EXECUTE;
+       if (access & GENERIC_ALL)     access |= JOB_OBJECT_ALL_ACCESS; */
     access |= JOB_OBJECT_ALL_ACCESS;
     return access & ~(GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL);
 }
@@ -279,7 +279,7 @@ static int job_signaled( struct object *obj, struct thread *thread )
     struct job *job = (struct job*)obj;
     assert( obj->ops == &job_ops );
     
-    //TODO: job object should only become signaled after a timeout
+    /* TODO: job object should only become signaled after a timeout */
     return list_count(&job->processes) == 0;
 }
 
