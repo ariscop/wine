@@ -178,7 +178,7 @@ static struct job *create_job_object(void)
     job->completion_key = 0;
     job->completion = NULL;
 
-    list_count(&job->processes);
+    list_init(&job->processes);
 
     return job;
 }
