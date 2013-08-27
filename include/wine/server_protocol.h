@@ -674,6 +674,18 @@ struct terminate_job_reply
     struct reply_header __header;
 };
 
+struct process_in_job_request
+{
+    struct request_header __header;
+    obj_handle_t job_handle;
+    obj_handle_t process_handle;
+    char __pad_20[4];
+};
+struct process_in_job_reply
+{
+    struct reply_header __header;
+};
+
 struct job_assign_request
 {
     struct request_header __header;
@@ -5051,6 +5063,7 @@ enum request
     REQ_new_process,
     REQ_create_job,
     REQ_terminate_job,
+    REQ_process_in_job,
     REQ_job_assign,
     REQ_job_set_completion,
     REQ_get_new_process_info,
@@ -5314,6 +5327,7 @@ union generic_request
     struct new_process_request new_process_request;
     struct create_job_request create_job_request;
     struct terminate_job_request terminate_job_request;
+    struct process_in_job_request process_in_job_request;
     struct job_assign_request job_assign_request;
     struct job_set_completion_request job_set_completion_request;
     struct get_new_process_info_request get_new_process_info_request;
@@ -5575,6 +5589,7 @@ union generic_reply
     struct new_process_reply new_process_reply;
     struct create_job_reply create_job_reply;
     struct terminate_job_reply terminate_job_reply;
+    struct process_in_job_reply process_in_job_reply;
     struct job_assign_reply job_assign_reply;
     struct job_set_completion_reply job_set_completion_reply;
     struct get_new_process_info_reply get_new_process_info_reply;
@@ -5830,6 +5845,6 @@ union generic_reply
     struct set_suspend_context_reply set_suspend_context_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 444
+#define SERVER_PROTOCOL_VERSION 445
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

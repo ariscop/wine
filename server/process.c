@@ -1444,13 +1444,15 @@ DECL_HANDLER(make_process_system)
 
 DECL_HANDLER(create_job)
 {
-    struct object *job;
+    struct job *job;
     
-    if(!(job = (struct object*)create_job_object()))
-        reply->handle = 0;
-    else {
-        reply->handle = alloc_handle( current->process, job, 0, 0);
+    job = create_job_object();
+    
+    if(job) {
+        reply->handle = alloc_handle( current->process, (struct object*)job, 0, 0);
         release_object(job);
+    } else {
+        reply->handle = 0;
     }
 }
 
@@ -1462,14 +1464,39 @@ DECL_HANDLER(job_assign)
     if(!(job = get_job_from_handle( current->process, req->job_handle, JOB_OBJECT_ASSIGN_PROCESS )))
         return;
     
-    if(!(process = get_process_from_handle( req->process_handle, PROCESS_SET_QUOTA|PROCESS_TERMINATE ))) {
-        release_object(job);
-        return;
-    }
+    if(!(process = get_process_from_handle( req->process_handle, PROCESS_SET_QUOTA|PROCESS_TERMINATE )))
+        goto error;
     
     job_add_process( job, process );
     
     release_object(process);
+error:
+    release_object(job);
+}
+
+DECL_HANDLER(process_in_job)
+{
+    struct job *job;
+    struct process *process, *itter;
+
+    if(!(job = get_job_from_handle( current->process, req->job_handle, JOB_OBJECT_ASSIGN_PROCESS )))
+        return;
+
+    if(!(process = get_process_from_handle( req->process_handle, PROCESS_SET_QUOTA|PROCESS_TERMINATE )))
+        goto error;
+
+    set_error(STATUS_PROCESS_NOT_IN_JOB);
+
+    LIST_FOR_EACH_ENTRY(itter, &job->processes, struct process, job_entry )
+    {
+        if(itter == process) {
+            set_error(STATUS_PROCESS_IN_JOB);
+            break;
+        }
+    }
+
+    release_object(process);
+error:
     release_object(job);
 }
 

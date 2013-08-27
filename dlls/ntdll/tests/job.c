@@ -34,7 +34,7 @@ static DWORD getProcess(PHANDLE handle) {
     PROCESS_INFORMATION info = {};
 
 	if(!CreateProcessA(NULL, GetCommandLine(), NULL, NULL, FALSE, 0, NULL, NULL, &startup, &info)) {
-        ok(FALSE, "CreateProcess failed: %x\n", GetLastError());
+        ok(FALSE, "CreateProcess: %x\n", GetLastError());
 		return 0;
     }
 
@@ -52,6 +52,7 @@ typedef struct _JOBOBJECT_ASSOCIATE_COMPLETION_PORT {
 static NTSTATUS (WINAPI *pNtCreateJobObject)( PHANDLE handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr );
 static NTSTATUS (WINAPI *pNtSetInformationJobObject)( HANDLE handle, JOBOBJECTINFOCLASS klass, PVOID info, ULONG len );
 static NTSTATUS (WINAPI *pNtAssignProcessToJobObject)( HANDLE job, HANDLE process );
+static NTSTATUS (WINAPI *pNtIsProcessInJob)( HANDLE process, HANDLE job );
 static NTSTATUS (WINAPI *pNtTerminateJobObject)( HANDLE job, NTSTATUS status );
 
 static void test_completion_response(HANDLE IOPort, DWORD eKey, ULONG_PTR eVal, LPOVERLAPPED eOverlap)
@@ -61,7 +62,7 @@ static void test_completion_response(HANDLE IOPort, DWORD eKey, ULONG_PTR eVal, 
 	LPOVERLAPPED Overlapped;
 
     ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, 0);
-    ok(ret, "GetQueuedCompletionStatus failed: %x\n", GetLastError());
+    ok(ret, "GetQueuedCompletionStatus: %x\n", GetLastError());
     if(ret)
         ok(eKey == CompletionKey &&
             eVal == CompletionValue &&
@@ -78,41 +79,50 @@ static void test_completion(void) {
     NTSTATUS ret;
 
     IOPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
-    ok(IOPort != INVALID_HANDLE_VALUE, "CreateIoCompletionPort failed: %x", GetLastError());
+    ok(IOPort != INVALID_HANDLE_VALUE, "CreateIoCompletionPort: %x", GetLastError());
 
     ret = pNtCreateJobObject(&JobObject, GENERIC_ALL, NULL);
-    ok(ret == STATUS_SUCCESS, "NtCreateJobObject failed: %x\n", ret);
+    ok(ret == STATUS_SUCCESS, "NtCreateJobObject: %x\n", ret);
 
     Port.CompletionKey = JobObject;
     Port.CompletionPort = IOPort;
     ret = pNtSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation,	&Port, sizeof(Port));
-    ok(ret == STATUS_SUCCESS, "NtCreateJobObject failed: %x\n", ret);
+    ok(ret == STATUS_SUCCESS, "NtCreateJobObject: %x\n", ret);
 
     process[0] = getProcess(&hprocess[0]);
     process[1] = getProcess(&hprocess[1]);
 
+    ret = pNtIsProcessInJob(hprocess[0], JobObject);
+    ok(ret == STATUS_PROCESS_NOT_IN_JOB, "NtIsProcessInJob: expected STATUS_PROCESS_IN_JOB, got %x\n", ret);
+
     ret = pNtAssignProcessToJobObject(JobObject, hprocess[0]);
-    ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject failed: %x\n", ret);
+    ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject: %x\n", ret);
+
+    ret = pNtIsProcessInJob(hprocess[0], JobObject);
+    ok(ret == STATUS_PROCESS_IN_JOB, "NtIsProcessInJob: expected STATUS_PROCESS_IN_JOB, got %x\n", ret);
 
     ret = pNtAssignProcessToJobObject(JobObject, hprocess[1]);
-    ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject failed: %x\n", ret);
+    ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject: %x\n", ret);
 
-    ok(TerminateProcess(hprocess[0], 1), "TerminateProcess failed: %x\n", GetLastError());
+    ok(TerminateProcess(hprocess[0], 1), "TerminateProcess: %x\n", GetLastError());
     Sleep(1000);
-    ok(TerminateProcess(hprocess[1], 2), "TerminateProcess failed: %x\n", GetLastError());
+    ok(TerminateProcess(hprocess[1], 2), "TerminateProcess: %x\n", GetLastError());
     Sleep(1000);
+
+    ret = pNtIsProcessInJob(hprocess[0], JobObject);
+    todo_wine ok(ret == STATUS_PROCESS_IN_JOB, "NtIsProcessInJob: expected STATUS_PROCESS_IN_JOB, got %x\n", ret);
 
     process[2] = getProcess(&hprocess[2]);
     process[3] = getProcess(&hprocess[3]);
 
     ret = pNtAssignProcessToJobObject(JobObject, hprocess[2]);
-    ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject failed: %x\n", ret);
+    ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject: %x\n", ret);
 
     ret = pNtAssignProcessToJobObject(JobObject, hprocess[3]);
-    ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject failed: %x\n", ret);
+    ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject: %x\n", ret);
 
     ret = pNtTerminateJobObject( JobObject, 5 );
-    ok(ret == STATUS_SUCCESS, "NtTerminateJobObject failed: %x\n", GetLastError());
+    ok(ret == STATUS_SUCCESS, "NtTerminateJobObject: %x\n", GetLastError());
 
     test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)process[0]);
     test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)process[1]);
@@ -151,6 +161,7 @@ START_TEST(job)
     pNtCreateJobObject = (void*)GetProcAddress(hntdll, "NtCreateJobObject");
 	pNtSetInformationJobObject = (void*)GetProcAddress(hntdll, "NtSetInformationJobObject");
 	pNtAssignProcessToJobObject = (void*)GetProcAddress(hntdll, "NtAssignProcessToJobObject");
+	pNtIsProcessInJob = (void*)GetProcAddress(hntdll, "NtIsProcessInJob");
 	pNtTerminateJobObject = (void*)GetProcAddress(hntdll, "NtTerminateJobObject");
 
     test_completion();

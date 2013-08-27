@@ -1093,6 +1093,12 @@ static void dump_terminate_job_request( const struct terminate_job_request *req 
     fprintf( stderr, ", status=%d", req->status );
 }
 
+static void dump_process_in_job_request( const struct process_in_job_request *req )
+{
+    fprintf( stderr, " job_handle=%04x", req->job_handle );
+    fprintf( stderr, ", process_handle=%04x", req->process_handle );
+}
+
 static void dump_job_assign_request( const struct job_assign_request *req )
 {
     fprintf( stderr, " job_handle=%04x", req->job_handle );
@@ -4047,6 +4053,7 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_new_process_request,
     (dump_func)dump_create_job_request,
     (dump_func)dump_terminate_job_request,
+    (dump_func)dump_process_in_job_request,
     (dump_func)dump_job_assign_request,
     (dump_func)dump_job_set_completion_request,
     (dump_func)dump_get_new_process_info_request,
@@ -4308,6 +4315,7 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] = {
     NULL,
     NULL,
     NULL,
+    NULL,
     (dump_func)dump_get_new_process_info_reply,
     (dump_func)dump_new_thread_reply,
     (dump_func)dump_get_startup_info_reply,
@@ -4565,6 +4573,7 @@ static const char * const req_names[REQ_NB_REQUESTS] = {
     "new_process",
     "create_job",
     "terminate_job",
+    "process_in_job",
     "job_assign",
     "job_set_completion",
     "get_new_process_info",
@@ -4915,7 +4924,9 @@ static const struct
     { "PIPE_LISTENING",              STATUS_PIPE_LISTENING },
     { "PIPE_NOT_AVAILABLE",          STATUS_PIPE_NOT_AVAILABLE },
     { "PRIVILEGE_NOT_HELD",          STATUS_PRIVILEGE_NOT_HELD },
+    { "PROCESS_IN_JOB",              STATUS_PROCESS_IN_JOB },
     { "PROCESS_IS_TERMINATING",      STATUS_PROCESS_IS_TERMINATING },
+    { "PROCESS_NOT_IN_JOB",          STATUS_PROCESS_NOT_IN_JOB },
     { "SECTION_TOO_BIG",             STATUS_SECTION_TOO_BIG },
     { "SEMAPHORE_LIMIT_EXCEEDED",    STATUS_SEMAPHORE_LIMIT_EXCEEDED },
     { "SHARING_VIOLATION",           STATUS_SHARING_VIOLATION },
