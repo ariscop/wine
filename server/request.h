@@ -108,6 +108,7 @@ static inline void set_reply_data_ptr( void *data, data_size_t size )
 
 DECL_HANDLER(new_process);
 DECL_HANDLER(create_job);
+DECL_HANDLER(terminate_job);
 DECL_HANDLER(job_assign);
 DECL_HANDLER(job_set_completion);
 DECL_HANDLER(get_new_process_info);
@@ -369,6 +370,7 @@ static const req_handler req_handlers[REQ_NB_REQUESTS] =
 {
     (req_handler)req_new_process,
     (req_handler)req_create_job,
+    (req_handler)req_terminate_job,
     (req_handler)req_job_assign,
     (req_handler)req_job_set_completion,
     (req_handler)req_get_new_process_info,
@@ -672,6 +674,9 @@ C_ASSERT( sizeof(struct new_process_reply) == 32 );
 C_ASSERT( sizeof(struct create_job_request) == 16 );
 C_ASSERT( FIELD_OFFSET(struct create_job_reply, handle) == 8 );
 C_ASSERT( sizeof(struct create_job_reply) == 16 );
+C_ASSERT( FIELD_OFFSET(struct terminate_job_request, handle) == 12 );
+C_ASSERT( FIELD_OFFSET(struct terminate_job_request, status) == 16 );
+C_ASSERT( sizeof(struct terminate_job_request) == 24 );
 C_ASSERT( FIELD_OFFSET(struct job_assign_request, job_handle) == 12 );
 C_ASSERT( FIELD_OFFSET(struct job_assign_request, process_handle) == 16 );
 C_ASSERT( sizeof(struct job_assign_request) == 24 );

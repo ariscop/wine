@@ -1473,6 +1473,37 @@ DECL_HANDLER(job_assign)
     release_object(job);
 }
 
+DECL_HANDLER(terminate_job)
+{
+    struct job *job;
+    struct process *process;
+    struct completion *completion;
+
+    if(!(job = get_job_from_handle( current->process, req->handle, JOB_OBJECT_TERMINATE )))
+        return;
+    
+    completion = job->completion;
+    job->completion = NULL;
+    
+    LIST_FOR_EACH_ENTRY(process, &job->processes, struct process, job_entry )
+    {
+        terminate_process(process, NULL, req->status);
+    }
+    
+    job->completion = completion;
+    if(job->completion)
+    {
+        add_completion(
+            job->completion,
+            job->completion_key,
+            0, 1,
+            JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
+        );
+    }
+    
+    release_object(job);
+}
+
 DECL_HANDLER(job_set_completion)
 {
     struct job *job;

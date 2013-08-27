@@ -665,6 +665,11 @@ struct rawinput_device
     obj_handle_t handle;
 @END
 
+@REQ(terminate_job)
+    obj_handle_t handle;
+    int          status;
+@END
+
 @REQ(job_assign)
     obj_handle_t job_handle;
     obj_handle_t process_handle;
