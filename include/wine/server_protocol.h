@@ -404,6 +404,38 @@ struct token_groups
 
 };
 
+enum select_op
+{
+    SELECT_NONE,
+    SELECT_WAIT,
+    SELECT_WAIT_ALL,
+    SELECT_SIGNAL_AND_WAIT,
+    SELECT_KEYED_EVENT_WAIT,
+    SELECT_KEYED_EVENT_RELEASE
+};
+
+typedef union
+{
+    enum select_op op;
+    struct
+    {
+        enum select_op  op;
+        obj_handle_t    handles[MAXIMUM_WAIT_OBJECTS];
+    } wait;
+    struct
+    {
+        enum select_op  op;
+        obj_handle_t    wait;
+        obj_handle_t    signal;
+    } signal_and_wait;
+    struct
+    {
+        enum select_op  op;
+        obj_handle_t    handle;
+        client_ptr_t    key;
+    } keyed_event;
+} select_op_t;
+
 enum apc_type
 {
     APC_NONE,
@@ -1112,11 +1144,11 @@ struct select_request
     struct request_header __header;
     int          flags;
     client_ptr_t cookie;
-    obj_handle_t signal;
-    obj_handle_t prev_apc;
     timeout_t    timeout;
+    obj_handle_t prev_apc;
     /* VARARG(result,apc_result); */
-    /* VARARG(handles,handles); */
+    /* VARARG(data,select_op); */
+    char __pad_36[4];
 };
 struct select_reply
 {
@@ -1126,9 +1158,8 @@ struct select_reply
     obj_handle_t apc_handle;
     char __pad_60[4];
 };
-#define SELECT_ALL           1
-#define SELECT_ALERTABLE     2
-#define SELECT_INTERRUPTIBLE 4
+#define SELECT_ALERTABLE     1
+#define SELECT_INTERRUPTIBLE 2
 
 
 
@@ -1553,6 +1584,22 @@ struct get_socket_event_reply
     unsigned int pmask;
     unsigned int state;
     /* VARARG(errors,ints); */
+    char __pad_20[4];
+};
+
+
+
+struct get_socket_info_request
+{
+    struct request_header __header;
+    obj_handle_t handle;
+};
+struct get_socket_info_reply
+{
+    struct reply_header __header;
+    int family;
+    int type;
+    int protocol;
     char __pad_20[4];
 };
 
@@ -5116,6 +5163,7 @@ enum request
     REQ_accept_into_socket,
     REQ_set_socket_event,
     REQ_get_socket_event,
+    REQ_get_socket_info,
     REQ_enable_socket_event,
     REQ_set_socket_deferred,
     REQ_alloc_console,
@@ -5380,6 +5428,7 @@ union generic_request
     struct accept_into_socket_request accept_into_socket_request;
     struct set_socket_event_request set_socket_event_request;
     struct get_socket_event_request get_socket_event_request;
+    struct get_socket_info_request get_socket_info_request;
     struct enable_socket_event_request enable_socket_event_request;
     struct set_socket_deferred_request set_socket_deferred_request;
     struct alloc_console_request alloc_console_request;
@@ -5642,6 +5691,7 @@ union generic_reply
     struct accept_into_socket_reply accept_into_socket_reply;
     struct set_socket_event_reply set_socket_event_reply;
     struct get_socket_event_reply get_socket_event_reply;
+    struct get_socket_info_reply get_socket_info_reply;
     struct enable_socket_event_reply enable_socket_event_reply;
     struct set_socket_deferred_reply set_socket_deferred_reply;
     struct alloc_console_reply alloc_console_reply;
@@ -5846,6 +5896,6 @@ union generic_reply
     struct set_suspend_context_reply set_suspend_context_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 446
+#define SERVER_PROTOCOL_VERSION 449
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

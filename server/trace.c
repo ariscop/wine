@@ -66,6 +66,19 @@ static void dump_uints( const int *ptr, int len )
     fputc( '}', stderr );
 }
 
+static void dump_handles( const char *prefix, const obj_handle_t *data, data_size_t size )
+{
+    data_size_t len = size / sizeof(*data);
+
+    fprintf( stderr,"%s{", prefix );
+    while (len > 0)
+    {
+        fprintf( stderr, "%04x", *data++ );
+        if (--len) fputc( ',', stderr );
+    }
+    fputc( '}', stderr );
+}
+
 static void dump_timeout( const char *prefix, const timeout_t *time )
 {
     fprintf( stderr, "%s%s", prefix, get_timeout_str(*time) );
@@ -367,16 +380,45 @@ static void dump_varargs_apc_result( const char *prefix, data_size_t size )
     remove_data( size );
 }
 
-static void dump_varargs_handles( const char *prefix, data_size_t size )
+static void dump_varargs_select_op( const char *prefix, data_size_t size )
 {
-    const obj_handle_t *data = cur_data;
-    data_size_t len = size / sizeof(*data);
+    select_op_t data;
 
-    fprintf( stderr,"%s{", prefix );
-    while (len > 0)
+    if (!size)
     {
-        fprintf( stderr, "%04x", *data++ );
-        if (--len) fputc( ',', stderr );
+        fprintf( stderr, "%s{}", prefix );
+        return;
+    }
+    memset( &data, 0, sizeof(data) );
+    memcpy( &data, cur_data, min( size, sizeof(data) ));
+
+    fprintf( stderr, "%s{", prefix );
+    switch (data.op)
+    {
+    case SELECT_NONE:
+        fprintf( stderr, "NONE" );
+        break;
+    case SELECT_WAIT:
+    case SELECT_WAIT_ALL:
+        fprintf( stderr, "%s", data.op == SELECT_WAIT ? "WAIT" : "WAIT_ALL" );
+        if (size > offsetof( select_op_t, wait.handles ))
+            dump_handles( ",handles=", data.wait.handles,
+                          min( size, sizeof(data.wait) ) - offsetof( select_op_t, wait.handles ));
+        break;
+    case SELECT_SIGNAL_AND_WAIT:
+        fprintf( stderr, "SIGNAL_AND_WAIT,signal=%04x,wait=%04x",
+                 data.signal_and_wait.signal, data.signal_and_wait.wait );
+        break;
+    case SELECT_KEYED_EVENT_WAIT:
+    case SELECT_KEYED_EVENT_RELEASE:
+        fprintf( stderr, "KEYED_EVENT_%s,handle=%04x",
+                 data.op == SELECT_KEYED_EVENT_WAIT ? "WAIT" : "RELEASE",
+                 data.keyed_event.handle );
+        dump_uint64( ",key=", &data.keyed_event.key );
+        break;
+    default:
+        fprintf( stderr, "op=%u", data.op );
+        break;
     }
     fputc( '}', stderr );
     remove_data( size );
@@ -1391,11 +1433,10 @@ static void dump_select_request( const struct select_request *req )
 {
     fprintf( stderr, " flags=%d", req->flags );
     dump_uint64( ", cookie=", &req->cookie );
-    fprintf( stderr, ", signal=%04x", req->signal );
-    fprintf( stderr, ", prev_apc=%04x", req->prev_apc );
     dump_timeout( ", timeout=", &req->timeout );
+    fprintf( stderr, ", prev_apc=%04x", req->prev_apc );
     dump_varargs_apc_result( ", result=", cur_size );
-    dump_varargs_handles( ", handles=", cur_size );
+    dump_varargs_select_op( ", data=", cur_size );
 }
 
 static void dump_select_reply( const struct select_reply *req )
@@ -1703,6 +1744,18 @@ static void dump_get_socket_event_reply( const struct get_socket_event_reply *re
     fprintf( stderr, ", pmask=%08x", req->pmask );
     fprintf( stderr, ", state=%08x", req->state );
     dump_varargs_ints( ", errors=", cur_size );
+}
+
+static void dump_get_socket_info_request( const struct get_socket_info_request *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
+static void dump_get_socket_info_reply( const struct get_socket_info_reply *req )
+{
+    fprintf( stderr, " family=%d", req->family );
+    fprintf( stderr, ", type=%d", req->type );
+    fprintf( stderr, ", protocol=%d", req->protocol );
 }
 
 static void dump_enable_socket_event_request( const struct enable_socket_event_request *req )
@@ -4105,6 +4158,7 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_accept_into_socket_request,
     (dump_func)dump_set_socket_event_request,
     (dump_func)dump_get_socket_event_request,
+    (dump_func)dump_get_socket_info_request,
     (dump_func)dump_enable_socket_event_request,
     (dump_func)dump_set_socket_deferred_request,
     (dump_func)dump_alloc_console_request,
@@ -4365,6 +4419,7 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] = {
     NULL,
     NULL,
     (dump_func)dump_get_socket_event_reply,
+    (dump_func)dump_get_socket_info_reply,
     NULL,
     NULL,
     (dump_func)dump_alloc_console_reply,
@@ -4625,6 +4680,7 @@ static const char * const req_names[REQ_NB_REQUESTS] = {
     "accept_into_socket",
     "set_socket_event",
     "get_socket_event",
+    "get_socket_info",
     "enable_socket_event",
     "set_socket_deferred",
     "alloc_console",

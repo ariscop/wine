@@ -155,7 +155,6 @@ void *wined3d_rb_realloc(void *ptr, size_t size) DECLSPEC_HIDDEN;
 void wined3d_rb_free(void *ptr) DECLSPEC_HIDDEN;
 
 /* Device caps */
-#define MAX_PALETTES            65536
 #define MAX_STREAM_OUT          4
 #define MAX_STREAMS             16
 #define MAX_TEXTURES            8
@@ -242,9 +241,6 @@ static inline float float_24_to_32(DWORD in)
 #define ORM_BACKBUFFER  0
 #define ORM_FBO         1
 
-#define RTL_READDRAW   1
-#define RTL_READTEX    2
-
 #define PCI_VENDOR_NONE 0xffff /* e.g. 0x8086 for Intel and 0x10de for Nvidia */
 #define PCI_DEVICE_NONE 0xffff /* e.g. 0x14f for a Geforce6200 */
 
@@ -257,7 +253,6 @@ struct wined3d_settings
      * implemented, we'll leave it as a registry setting for developers. */
     BOOL glslRequested;
     int offscreen_rendering_mode;
-    int rendertargetlock_mode;
     unsigned short pci_vendor_id;
     unsigned short pci_device_id;
     /* Memory tracking and object counting. */
@@ -416,8 +411,6 @@ enum wined3d_shader_rel_op
 /* FIXME: This needs to go up to 2048 for
  * Shader model 3 according to msdn (and for software shaders) */
 #define MAX_LABELS 16
-
-#define SHADER_PGMSIZE 16384
 
 struct wined3d_shader_buffer
 {
@@ -1020,8 +1013,6 @@ enum fogsource {
     FOGSOURCE_VS,
     FOGSOURCE_COORD,
 };
-
-#define WINED3D_MAX_FBO_ENTRIES 64
 
 struct wined3d_occlusion_query
 {
@@ -1779,12 +1770,76 @@ HRESULT wined3d_init(struct wined3d *wined3d, UINT version, DWORD flags) DECLSPE
 BOOL wined3d_register_window(HWND window, struct wined3d_device *device) DECLSPEC_HIDDEN;
 void wined3d_unregister_window(HWND window) DECLSPEC_HIDDEN;
 
-/*****************************************************************************
- * IWineD3DDevice implementation structure
- */
+struct wined3d_stream_output
+{
+    struct wined3d_buffer *buffer;
+    UINT offset;
+};
+
+struct wined3d_stream_state
+{
+    struct wined3d_buffer *buffer;
+    UINT offset;
+    UINT stride;
+    UINT frequency;
+    UINT flags;
+};
+
+struct wined3d_state
+{
+    const struct wined3d_fb_state *fb;
+
+    struct wined3d_vertex_declaration *vertex_declaration;
+    struct wined3d_stream_output stream_output[MAX_STREAM_OUT];
+    struct wined3d_stream_state streams[MAX_STREAMS + 1 /* tesselated pseudo-stream */];
+    struct wined3d_buffer *index_buffer;
+    enum wined3d_format_id index_format;
+    INT base_vertex_index;
+    INT load_base_vertex_index; /* Non-indexed drawing needs 0 here, indexed needs base_vertex_index. */
+    GLenum gl_primitive_type;
+
+    struct wined3d_shader *vertex_shader;
+    struct wined3d_buffer *vs_cb[MAX_CONSTANT_BUFFERS];
+    struct wined3d_sampler *vs_sampler[MAX_SAMPLER_OBJECTS];
+    BOOL vs_consts_b[MAX_CONST_B];
+    INT vs_consts_i[MAX_CONST_I * 4];
+    float *vs_consts_f;
+
+    struct wined3d_shader *geometry_shader;
+    struct wined3d_buffer *gs_cb[MAX_CONSTANT_BUFFERS];
+    struct wined3d_sampler *gs_sampler[MAX_SAMPLER_OBJECTS];
+
+    struct wined3d_shader *pixel_shader;
+    struct wined3d_buffer *ps_cb[MAX_CONSTANT_BUFFERS];
+    struct wined3d_sampler *ps_sampler[MAX_SAMPLER_OBJECTS];
+    BOOL ps_consts_b[MAX_CONST_B];
+    INT ps_consts_i[MAX_CONST_I * 4];
+    float *ps_consts_f;
+
+    struct wined3d_texture *textures[MAX_COMBINED_SAMPLERS];
+    DWORD sampler_states[MAX_COMBINED_SAMPLERS][WINED3D_HIGHEST_SAMPLER_STATE + 1];
+    DWORD texture_states[MAX_TEXTURES][WINED3D_HIGHEST_TEXTURE_STATE + 1];
+    DWORD lowest_disabled_stage;
+
+    struct wined3d_matrix transforms[HIGHEST_TRANSFORMSTATE + 1];
+    struct wined3d_vec4 clip_planes[MAX_CLIPPLANES];
+    struct wined3d_material material;
+    struct wined3d_viewport viewport;
+    RECT scissor_rect;
+
+    /* Light hashmap. Collisions are handled using linked lists. */
+#define LIGHTMAP_SIZE 43
+#define LIGHTMAP_HASHFUNC(x) ((x) % LIGHTMAP_SIZE)
+    struct list light_map[LIGHTMAP_SIZE];
+    const struct wined3d_light_info *lights[MAX_ACTIVE_LIGHTS];
+
+    DWORD render_states[WINEHIGHEST_RENDER_STATE + 1];
+};
+
 #define WINED3D_UNMAPPED_STAGE ~0U
 
-/* Multithreaded flag. Removed from the public header to signal that IWineD3D::CreateDevice ignores it */
+/* Multithreaded flag. Removed from the public header to signal that
+ * wined3d_device_create() ignores it. */
 #define WINED3DCREATE_MULTITHREADED 0x00000004
 
 struct wined3d_device
@@ -1827,12 +1882,9 @@ struct wined3d_device
 
     BYTE fixed_function_usage_map;      /* MAX_TEXTURES, 8 */
 
-#define DDRAW_PITCH_ALIGNMENT 8
-#define D3D8_PITCH_ALIGNMENT 4
     unsigned char           surface_alignment; /* Line Alignment of surfaces                      */
 
-    /* State block related */
-    struct wined3d_stateblock *stateBlock;
+    struct wined3d_state state;
     struct wined3d_state *update_state;
     struct wined3d_stateblock *recording;
 
@@ -2153,7 +2205,6 @@ struct wined3d_surface
     RECT                      lockedRect;
     RECT                      dirtyRect;
     int                       lockCount;
-#define MAXLOCKCOUNT          50 /* After this amount of locks do not free the sysmem copy */
 
     /* For GetDC */
     struct wined3d_surface_dib dib;
@@ -2354,72 +2405,6 @@ struct StageState {
     DWORD state;
 };
 
-struct wined3d_stream_output
-{
-    struct wined3d_buffer *buffer;
-    UINT offset;
-};
-
-struct wined3d_stream_state
-{
-    struct wined3d_buffer *buffer;
-    UINT offset;
-    UINT stride;
-    UINT frequency;
-    UINT flags;
-};
-
-struct wined3d_state
-{
-    const struct wined3d_fb_state *fb;
-
-    struct wined3d_vertex_declaration *vertex_declaration;
-    struct wined3d_stream_output stream_output[MAX_STREAM_OUT];
-    struct wined3d_stream_state streams[MAX_STREAMS + 1 /* tesselated pseudo-stream */];
-    struct wined3d_buffer *index_buffer;
-    enum wined3d_format_id index_format;
-    INT base_vertex_index;
-    INT load_base_vertex_index; /* Non-indexed drawing needs 0 here, indexed needs base_vertex_index. */
-    GLenum gl_primitive_type;
-
-    struct wined3d_shader *vertex_shader;
-    struct wined3d_buffer *vs_cb[MAX_CONSTANT_BUFFERS];
-    struct wined3d_sampler *vs_sampler[MAX_SAMPLER_OBJECTS];
-    BOOL vs_consts_b[MAX_CONST_B];
-    INT vs_consts_i[MAX_CONST_I * 4];
-    float *vs_consts_f;
-
-    struct wined3d_shader *geometry_shader;
-    struct wined3d_buffer *gs_cb[MAX_CONSTANT_BUFFERS];
-    struct wined3d_sampler *gs_sampler[MAX_SAMPLER_OBJECTS];
-
-    struct wined3d_shader *pixel_shader;
-    struct wined3d_buffer *ps_cb[MAX_CONSTANT_BUFFERS];
-    struct wined3d_sampler *ps_sampler[MAX_SAMPLER_OBJECTS];
-    BOOL ps_consts_b[MAX_CONST_B];
-    INT ps_consts_i[MAX_CONST_I * 4];
-    float *ps_consts_f;
-
-    struct wined3d_texture *textures[MAX_COMBINED_SAMPLERS];
-    DWORD sampler_states[MAX_COMBINED_SAMPLERS][WINED3D_HIGHEST_SAMPLER_STATE + 1];
-    DWORD texture_states[MAX_TEXTURES][WINED3D_HIGHEST_TEXTURE_STATE + 1];
-    DWORD lowest_disabled_stage;
-
-    struct wined3d_matrix transforms[HIGHEST_TRANSFORMSTATE + 1];
-    struct wined3d_vec4 clip_planes[MAX_CLIPPLANES];
-    struct wined3d_material material;
-    struct wined3d_viewport viewport;
-    RECT scissor_rect;
-
-    /* Light hashmap . Collisions are handled using standard wine double linked lists */
-#define LIGHTMAP_SIZE 43 /* Use of a prime number recommended. Set to 1 for a linked list! */
-#define LIGHTMAP_HASHFUNC(x) ((x) % LIGHTMAP_SIZE) /* Primitive and simple function */
-    struct list light_map[LIGHTMAP_SIZE]; /* Hash map containing the lights */
-    const struct wined3d_light_info *lights[MAX_ACTIVE_LIGHTS]; /* Map of opengl lights to d3d lights */
-
-    DWORD render_states[WINEHIGHEST_RENDER_STATE + 1];
-};
-
 struct wined3d_stateblock
 {
     LONG                      ref;     /* Note: Ref counting not required */
@@ -2453,8 +2438,10 @@ struct wined3d_stateblock
 };
 
 void stateblock_init_contained_states(struct wined3d_stateblock *stateblock) DECLSPEC_HIDDEN;
-void stateblock_init_default_state(struct wined3d_stateblock *stateblock) DECLSPEC_HIDDEN;
 
+void state_cleanup(struct wined3d_state *state) DECLSPEC_HIDDEN;
+HRESULT state_init(struct wined3d_state *state, const struct wined3d_d3d_info *d3d_info) DECLSPEC_HIDDEN;
+void state_init_default(struct wined3d_state *state, struct wined3d_device *device) DECLSPEC_HIDDEN;
 void state_unbind_resources(struct wined3d_state *state) DECLSPEC_HIDDEN;
 
 /* Direct3D terminology with little modifications. We do not have an issued state
@@ -2498,15 +2485,6 @@ struct wined3d_map_range
     UINT offset;
     UINT size;
 };
-
-#define WINED3D_BUFFER_OPTIMIZED    0x01    /* Optimize has been called for the buffer */
-#define WINED3D_BUFFER_HASDESC      0x02    /* A vertex description has been found */
-#define WINED3D_BUFFER_CREATEBO     0x04    /* Attempt to create a buffer object next PreLoad */
-#define WINED3D_BUFFER_DOUBLEBUFFER 0x08    /* Use a vbo and local allocated memory */
-#define WINED3D_BUFFER_FLUSH        0x10    /* Manual unmap flushing */
-#define WINED3D_BUFFER_DISCARD      0x20    /* A DISCARD lock has occurred since the last PreLoad */
-#define WINED3D_BUFFER_NOSYNC       0x40    /* All locks since the last PreLoad had NOOVERWRITE set */
-#define WINED3D_BUFFER_APPLESYNC    0x80    /* Using sync as in GL_APPLE_flush_buffer_range */
 
 struct wined3d_buffer
 {
@@ -2590,8 +2568,6 @@ void swapchain_destroy_contexts(struct wined3d_swapchain *swapchain) DECLSPEC_HI
 HDC swapchain_get_backup_dc(struct wined3d_swapchain *swapchain) DECLSPEC_HIDDEN;
 void swapchain_update_draw_bindings(struct wined3d_swapchain *swapchain) DECLSPEC_HIDDEN;
 void swapchain_update_render_to_fbo(struct wined3d_swapchain *swapchain) DECLSPEC_HIDDEN;
-
-#define DEFAULT_REFRESH_RATE 0
 
 /*****************************************************************************
  * Utility function prototypes
@@ -2991,10 +2967,8 @@ DWORD wined3d_format_convert_from_float(const struct wined3d_surface *surface,
 
 static inline BOOL use_vs(const struct wined3d_state *state)
 {
-    /* Check stateblock->vertexDecl to allow this to be used from
-     * IWineD3DDeviceImpl_FindTexUnitMap(). This is safe because
-     * stateblock->vertexShader implies a vertex declaration instead of ddraw
-     * style strided data. */
+    /* Check state->vertex_declaration to allow this to be used before the
+     * stream info is validated, for example in device_update_tex_unit_map(). */
     return state->vertex_shader && !state->vertex_declaration->position_transformed;
 }
 

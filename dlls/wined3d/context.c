@@ -33,6 +33,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(d3d);
 WINE_DECLARE_DEBUG_CHANNEL(d3d_perf);
 WINE_DECLARE_DEBUG_CHANNEL(d3d_synchronous);
 
+#define WINED3D_MAX_FBO_ENTRIES 64
+
 static DWORD wined3d_context_tls_idx;
 
 /* FBO helper functions */
@@ -885,7 +887,6 @@ err:
     context->valid = 0;
 }
 
-/* Do not call while under the GL lock. */
 static void context_destroy_gl_resources(struct wined3d_context *context)
 {
     const struct wined3d_gl_info *gl_info = context->gl_info;
@@ -1010,7 +1011,6 @@ struct wined3d_context *context_get_current(void)
     return TlsGetValue(wined3d_context_tls_idx);
 }
 
-/* Do not call while under the GL lock. */
 BOOL context_set_current(struct wined3d_context *ctx)
 {
     struct wined3d_context *old = context_get_current();
@@ -1295,7 +1295,6 @@ static void WINE_GLAPI wined3d_debug_callback(GLenum source, GLenum type, GLuint
     }
 }
 
-/* Do not call while under the GL lock. */
 struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
         struct wined3d_surface *target, const struct wined3d_format *ds_format)
 {
@@ -1654,7 +1653,6 @@ out:
     return NULL;
 }
 
-/* Do not call while under the GL lock. */
 void context_destroy(struct wined3d_device *device, struct wined3d_context *context)
 {
     BOOL destroy;
@@ -2276,7 +2274,7 @@ BOOL context_apply_clear_state(struct wined3d_context *context, const struct win
 
 static DWORD find_draw_buffers_mask(const struct wined3d_context *context, const struct wined3d_device *device)
 {
-    const struct wined3d_state *state = &device->stateBlock->state;
+    const struct wined3d_state *state = &device->state;
     struct wined3d_surface **rts = state->fb->render_targets;
     struct wined3d_shader *ps = state->pixel_shader;
     DWORD rt_mask, rt_mask_bits;
@@ -2350,7 +2348,7 @@ void context_state_drawbuf(struct wined3d_context *context, const struct wined3d
 /* Context activation is done by the caller. */
 BOOL context_apply_draw_state(struct wined3d_context *context, struct wined3d_device *device)
 {
-    const struct wined3d_state *state = &device->stateBlock->state;
+    const struct wined3d_state *state = &device->state;
     const struct StateEntry *state_table = context->state_table;
     const struct wined3d_fb_state *fb = state->fb;
     unsigned int i;
@@ -2463,7 +2461,6 @@ static void context_setup_target(struct wined3d_context *context, struct wined3d
     context_set_render_offscreen(context, render_offscreen);
 }
 
-/* Do not call while under the GL lock. */
 struct wined3d_context *context_acquire(const struct wined3d_device *device, struct wined3d_surface *target)
 {
     struct wined3d_context *current_context = context_get_current();

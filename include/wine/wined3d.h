@@ -713,7 +713,6 @@ enum wined3d_query_type
 
 enum wined3d_stateblock_type
 {
-    WINED3D_SBT_INIT                        = 0,
     WINED3D_SBT_ALL                         = 1,
     WINED3D_SBT_PIXEL_STATE                 = 2,
     WINED3D_SBT_VERTEX_STATE                = 3,
@@ -1749,7 +1748,6 @@ struct wined3d_ddraw_caps
     DWORD ssb_color_key_caps;
     DWORD ssb_fx_caps;
     DWORD dds_caps;
-    DWORD stride_align;
 };
 
 typedef struct _WINED3DCAPS

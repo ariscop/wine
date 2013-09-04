@@ -437,7 +437,6 @@ ULONG CDECL wined3d_texture_incref(struct wined3d_texture *texture)
     return refcount;
 }
 
-/* Do not call while under the GL lock. */
 ULONG CDECL wined3d_texture_decref(struct wined3d_texture *texture)
 {
     ULONG refcount = InterlockedDecrement(&texture->resource.ref);
@@ -471,7 +470,6 @@ DWORD CDECL wined3d_texture_get_priority(const struct wined3d_texture *texture)
     return resource_get_priority(&texture->resource);
 }
 
-/* Do not call while under the GL lock. */
 void CDECL wined3d_texture_preload(struct wined3d_texture *texture)
 {
     texture->texture_ops->texture_preload(texture, SRGB_ANY);
@@ -665,7 +663,6 @@ static BOOL texture_srgb_mode(const struct wined3d_texture *texture, enum WINED3
     }
 }
 
-/* Do not call while under the GL lock. */
 static void texture2d_preload(struct wined3d_texture *texture, enum WINED3DSRGB srgb)
 {
     UINT sub_count = texture->level_count * texture->layer_count;
@@ -726,7 +723,6 @@ static void texture2d_sub_resource_cleanup(struct wined3d_resource *sub_resource
     wined3d_surface_decref(surface);
 }
 
-/* Do not call while under the GL lock. */
 static void texture2d_unload(struct wined3d_resource *resource)
 {
     struct wined3d_texture *texture = wined3d_texture_from_resource(resource);
@@ -962,10 +958,7 @@ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3
         return hr;
     }
 
-    /* Precalculated scaling for 'faked' non power of two texture coords.
-     * Second also don't use ARB_TEXTURE_RECTANGLE in case the surface format is P8 and EXT_PALETTED_TEXTURE
-     * is used in combination with texture uploads (RTL_READTEX). The reason is that EXT_PALETTED_TEXTURE
-     * doesn't work in combination with ARB_TEXTURE_RECTANGLE. */
+    /* Precalculated scaling for 'faked' non power of two texture coords. */
     if (gl_info->supported[WINED3D_GL_NORMALIZED_TEXRECT]
             && (desc->width != pow2_width || desc->height != pow2_height))
     {
@@ -977,9 +970,8 @@ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3
         texture->flags |= WINED3D_TEXTURE_COND_NP2;
         texture->min_mip_lookup = minMipLookup_noFilter;
     }
-    else if (gl_info->supported[ARB_TEXTURE_RECTANGLE] && (desc->width != pow2_width || desc->height != pow2_height)
-            && !(desc->format == WINED3DFMT_P8_UINT && gl_info->supported[EXT_PALETTED_TEXTURE]
-            && wined3d_settings.rendertargetlock_mode == RTL_READTEX))
+    else if (gl_info->supported[ARB_TEXTURE_RECTANGLE]
+            && (desc->width != pow2_width || desc->height != pow2_height))
     {
         texture->pow2_matrix[0] = (float)desc->width;
         texture->pow2_matrix[5] = (float)desc->height;
@@ -1053,7 +1045,6 @@ static HRESULT texture3d_bind(struct wined3d_texture *texture,
     return wined3d_texture_bind(texture, context, srgb, &dummy);
 }
 
-/* Do not call while under the GL lock. */
 static void texture3d_preload(struct wined3d_texture *texture, enum WINED3DSRGB srgb)
 {
     UINT sub_count = texture->level_count * texture->layer_count;
@@ -1105,7 +1096,6 @@ static void texture3d_sub_resource_cleanup(struct wined3d_resource *sub_resource
     wined3d_volume_decref(volume);
 }
 
-/* Do not call while under the GL lock. */
 static void texture3d_unload(struct wined3d_resource *resource)
 {
     struct wined3d_texture *texture = wined3d_texture_from_resource(resource);

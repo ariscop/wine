@@ -780,10 +780,11 @@ static void test_waittxempty(void)
     DCB dcb;
     COMMTIMEOUTS timeouts;
     char tbuf[]="test_waittxempty";
-    DWORD before, after, bytes, timediff, evtmask;
+    DWORD before, after, bytes, timediff, evtmask, errors, i;
     BOOL res;
     DWORD baud = SLOWBAUD;
-    OVERLAPPED ovl_write, ovl_wait;
+    OVERLAPPED ovl_write, ovl_wait, ovl_wait2;
+    COMSTAT stat;
 
     hcom = test_OpenComm(TRUE);
     if (hcom == INVALID_HANDLE_VALUE) return;
@@ -832,7 +833,7 @@ todo_wine
     ok(!res && GetLastError() == ERROR_IO_PENDING, "WriteFile returned %d, error %d\n", res, GetLastError());
 todo_wine
     ok(!bytes, "expected 0, got %u\n", bytes);
-    ok(after - before == 0, "WriteFile took %d ms to write %d Bytes at %d Baud\n",
+    ok(after - before < 30, "WriteFile took %d ms to write %d Bytes at %d Baud\n",
        after - before, bytes, baud);
     /* don't wait for WriteFile completion */
 
@@ -851,10 +852,23 @@ todo_wine
     {
         res = GetOverlappedResult(hcom, &ovl_wait, &bytes, FALSE);
         ok(res, "GetOverlappedResult reported error %d\n", GetLastError());
+todo_wine
         ok(bytes == sizeof(evtmask), "expected %u, written %u\n", (UINT)sizeof(evtmask), bytes);
         res = TRUE;
     }
-    else res = FALSE;
+    else
+    {
+        /* unblock pending wait */
+        trace("recovering after WAIT_TIMEOUT...\n");
+        /* FIXME: Wine fails to unblock with new mask being equal to the old one */
+        res = SetCommMask(hcom, 0);
+        ok(res, "SetCommMask error %d\n", GetLastError());
+
+        res = WaitForSingleObject(ovl_wait.hEvent, TIMEOUT);
+        ok(res == WAIT_OBJECT_0, "WaitCommEvent failed with a timeout\n");
+
+        res = FALSE;
+    }
     after = GetTickCount();
 todo_wine
     ok(res, "WaitCommEvent error %d\n", GetLastError());
@@ -875,6 +889,96 @@ todo_wine
     CloseHandle(ovl_write.hEvent);
 
     CloseHandle(hcom);
+
+    for (i = 0; i < 2; i++)
+    {
+        hcom = test_OpenComm(TRUE);
+        if (hcom == INVALID_HANDLE_VALUE) return;
+
+        res = SetCommMask(hcom, EV_TXEMPTY);
+        ok(res, "SetCommMask error %d\n", GetLastError());
+
+        if (i == 0)
+        {
+            S(U(ovl_write)).Offset = 0;
+            S(U(ovl_write)).OffsetHigh = 0;
+            ovl_write.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+            before = GetTickCount();
+            SetLastError(0xdeadbeef);
+            res = WriteFile(hcom, tbuf, sizeof(tbuf), &bytes, &ovl_write);
+todo_wine
+            ok(!res && GetLastError() == ERROR_IO_PENDING, "WriteFile returned %d, error %d\n", res, GetLastError());
+todo_wine
+            ok(!bytes, "expected 0, got %u\n", bytes);
+
+            ClearCommError(hcom, &errors, &stat);
+            ok(stat.cbInQue == 0, "InQueue should be empty, got %d bytes\n", stat.cbInQue);
+            ok(stat.cbOutQue != 0 || broken(stat.cbOutQue == 0) /* VM */, "OutQueue should not be empty\n");
+            ok(errors == 0, "ClearCommErrors: Unexpected error 0x%08x\n", errors);
+
+            res = GetOverlappedResult(hcom, &ovl_write, &bytes, TRUE);
+            ok(res, "GetOverlappedResult reported error %d\n", GetLastError());
+            ok(bytes == sizeof(tbuf), "expected %u, written %u\n", (UINT)sizeof(tbuf), bytes);
+            CloseHandle(ovl_write.hEvent);
+
+            res = FlushFileBuffers(hcom);
+            ok(res, "FlushFileBuffers error %d\n", GetLastError());
+        }
+
+        ClearCommError(hcom, &errors, &stat);
+        ok(stat.cbInQue == 0, "InQueue should be empty, got %d bytes\n", stat.cbInQue);
+        ok(stat.cbOutQue == 0, "OutQueue should be empty, got %d bytes\n", stat.cbOutQue);
+        ok(errors == 0, "ClearCommErrors: Unexpected error 0x%08x\n", errors);
+
+        S(U(ovl_wait)).Offset = 0;
+        S(U(ovl_wait)).OffsetHigh = 0;
+        ovl_wait.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+        evtmask = 0;
+        SetLastError(0xdeadbeef);
+        res = WaitCommEvent(hcom, &evtmask, &ovl_wait);
+        ok(!res && GetLastError() == ERROR_IO_PENDING, "%d: WaitCommEvent error %d\n", i, GetLastError());
+
+        res = WaitForSingleObject(ovl_wait.hEvent, TIMEOUT);
+        if (i == 0)
+todo_wine
+            ok(res == WAIT_OBJECT_0, "WaitCommEvent failed with a timeout\n");
+        else
+            ok(res == WAIT_TIMEOUT, "WaitCommEvent should fail with a timeout\n");
+        if (res == WAIT_OBJECT_0)
+        {
+            res = GetOverlappedResult(hcom, &ovl_wait, &bytes, FALSE);
+            ok(res, "GetOverlappedResult reported error %d\n", GetLastError());
+            ok(bytes == sizeof(evtmask), "expected %u, written %u\n", (UINT)sizeof(evtmask), bytes);
+            ok(res, "WaitCommEvent error %d\n", GetLastError());
+            ok(evtmask & EV_TXEMPTY, "WaitCommEvent: expected EV_TXEMPTY, got %#x\n", evtmask);
+        }
+        else
+        {
+            ok(!evtmask, "WaitCommEvent: expected 0, got %#x\n", evtmask);
+
+            S(U(ovl_wait2)).Offset = 0;
+            S(U(ovl_wait2)).OffsetHigh = 0;
+            ovl_wait2.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+            SetLastError(0xdeadbeef);
+            res = WaitCommEvent(hcom, &evtmask, &ovl_wait2);
+            ok(!res, "WaitCommEvent should fail if there is a pending wait\n");
+todo_wine
+            ok(GetLastError() == ERROR_INVALID_PARAMETER, "expected ERROR_INVALID_PARAMETER, got %d\n", GetLastError());
+            CloseHandle(ovl_wait2.hEvent);
+
+            /* unblock pending wait */
+            trace("recovering after WAIT_TIMEOUT...\n");
+            /* FIXME: Wine fails to unblock with new mask being equal to the old one */
+            res = SetCommMask(hcom, 0);
+            ok(res, "SetCommMask error %d\n", GetLastError());
+
+            res = WaitForSingleObject(ovl_wait.hEvent, TIMEOUT);
+            ok(res == WAIT_OBJECT_0, "WaitCommEvent failed with a timeout\n");
+            CloseHandle(ovl_wait.hEvent);
+        }
+
+        CloseHandle(hcom);
+    }
 }
 
 /* A new open handle should not return error or have bytes in the Queues */
@@ -891,7 +995,6 @@ static void test_ClearCommError(void)
     ok(lpStat.cbInQue == 0, "Unexpected %d chars in InQueue\n", lpStat.cbInQue);
     ok(lpStat.cbOutQue == 0, "Unexpected %d chars in OutQueue\n", lpStat.cbOutQue);
     ok(errors == 0, "ClearCommErrors: Unexpected error 0x%08x\n", errors);
-    trace("test_ClearCommErrors done\n");
 
     CloseHandle(hcom);
 }
@@ -1036,7 +1139,7 @@ static void test_LoopbackCtsRts(void)
     if (dcb.fRtsControl == RTS_CONTROL_HANDSHAKE)
     {
 	trace("RTS_CONTROL_HANDSHAKE is set, so don't manipulate RTS\n");
-        CloseHandle(hcom);
+	CloseHandle(hcom);
 	return;
     }
     ok(GetCommModemStatus(hcom, &defaultStat), "GetCommModemStatus failed\n");
@@ -1180,6 +1283,7 @@ static void test_LoopbackDtrRing(void)
     if (dcb.fDtrControl == DTR_CONTROL_HANDSHAKE)
     {
 	trace("DTR_CONTROL_HANDSHAKE is set, so don't manipulate DTR\n");
+	CloseHandle(hcom);
 	return;
     }
     ok(GetCommModemStatus(hcom, &defaultStat), "GetCommModemStatus failed\n");
@@ -1592,6 +1696,7 @@ static void test_WaitRing(void)
     ok((ret = GetCommModemStatus(hcom, &defaultStat)), "GetCommModemStatus failed\n");
     if (!ret) {
 	skip("modem status failed -> skip.\n");
+	CloseHandle(hcom);
 	return;
     }
     if(defaultStat & MS_RING_ON)
@@ -1668,7 +1773,7 @@ static void test_WaitDcd(void)
     if (dcb.fDtrControl == DTR_CONTROL_DISABLE)
     {
 	trace("DTR_CONTROL_HANDSHAKE is set, so don't manipulate DTR\n");
-        CloseHandle(hcom);
+	CloseHandle(hcom);
 	return;
     }
     args[0]= TIMEOUT >>1;
@@ -1872,9 +1977,35 @@ done:
     CloseHandle(hcom);
 }
 
+static void test_FlushFileBuffers(void)
+{
+    HANDLE hcom;
+    DWORD  ret, bytes, errors;
+    COMSTAT stat;
+
+    hcom = test_OpenComm(FALSE);
+    if (hcom == INVALID_HANDLE_VALUE) return;
+
+    ret = WriteFile(hcom, "\0\0\0\0\0\0\0", 7, &bytes, NULL);
+    ok(ret, "WriteFile error %d\n", GetLastError());
+    ok(bytes == 7, "expected 7, got %u\n", bytes);
+
+    ret = FlushFileBuffers(hcom);
+    ok(ret, "FlushFileBuffers error %d\n", GetLastError());
+
+    ret = ClearCommError(hcom, &errors, &stat);
+    ok(ret, "ClearCommError error %d\n", GetLastError());
+    ok(stat.cbInQue == 0, "expected 0, got %d bytes in InQueue\n", stat.cbInQue);
+    ok(stat.cbOutQue == 0, "expected 0, got %d bytes in OutQueue\n", stat.cbOutQue);
+    ok(errors == 0, "expected errors 0, got %#x\n", errors);
+
+    CloseHandle(hcom);
+}
+
 START_TEST(comm)
 {
     test_ClearCommError(); /* keep it the very first test */
+    test_FlushFileBuffers();
     test_BuildCommDCB();
     test_ReadTimeOut();
     test_waittxempty();
