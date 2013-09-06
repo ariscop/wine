@@ -32,6 +32,7 @@
 #include "wincon.h"
 #include "winnls.h"
 #include "winternl.h"
+#include "winnt.h"
 
 #include "wine/test.h"
 
@@ -63,6 +64,11 @@ static BOOL   (WINAPI *pVirtualFreeEx)(HANDLE, LPVOID, SIZE_T, DWORD);
 static BOOL   (WINAPI *pQueryFullProcessImageNameA)(HANDLE hProcess, DWORD dwFlags, LPSTR lpExeName, PDWORD lpdwSize);
 static BOOL   (WINAPI *pQueryFullProcessImageNameW)(HANDLE hProcess, DWORD dwFlags, LPWSTR lpExeName, PDWORD lpdwSize);
 static DWORD  (WINAPI *pK32GetProcessImageFileNameA)(HANDLE,LPSTR,DWORD);
+static HANDLE (WINAPI *pCreateJobObjectW)( LPSECURITY_ATTRIBUTES sa, LPCWSTR name );
+static BOOL   (WINAPI *pAssignProcessToJobObject)( HANDLE job, HANDLE process );
+static BOOL   (WINAPI *pSetInformationJobObject)( HANDLE job, JOBOBJECTINFOCLASS class, LPVOID info, DWORD len );
+static BOOL   (WINAPI *pIsProcessInJob)( HANDLE process, HANDLE job, PBOOL result );
+static BOOL   (WINAPI *pTerminateJobObject)( HANDLE job, UINT exit_code );
 
 /* ############################### */
 static char     base[MAX_PATH];
@@ -206,6 +212,11 @@ static int     init(void)
     pQueryFullProcessImageNameA = (void *) GetProcAddress(hkernel32, "QueryFullProcessImageNameA");
     pQueryFullProcessImageNameW = (void *) GetProcAddress(hkernel32, "QueryFullProcessImageNameW");
     pK32GetProcessImageFileNameA = (void *) GetProcAddress(hkernel32, "K32GetProcessImageFileNameA");
+    pCreateJobObjectW = (void *) GetProcAddress(hkernel32, "CreateJobObjectW");
+    pAssignProcessToJobObject = (void *) GetProcAddress(hkernel32, "AssignProcessToJobObject");
+    pSetInformationJobObject = (void *) GetProcAddress(hkernel32, "SetInformationJobObject");
+    pIsProcessInJob = (void *) GetProcAddress(hkernel32, "IsProcessInJob");
+    pTerminateJobObject = (void *) GetProcAddress(hkernel32, "TerminateJobObject");
     return 1;
 }
 
@@ -2060,6 +2071,108 @@ static void test_DuplicateHandle(void)
     CloseHandle(out);
 }
 
+static void test_completion_response(HANDLE IOPort, DWORD eKey, ULONG_PTR eVal, LPOVERLAPPED eOverlap)
+{
+    DWORD CompletionKey, ret;
+    ULONG_PTR CompletionValue;
+    LPOVERLAPPED Overlapped;
+
+    ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, 0);
+    ok(ret, "GetQueuedCompletionStatus: %x\n", GetLastError());
+    if(ret)
+        ok(eKey == CompletionKey &&
+            eVal == CompletionValue &&
+            eOverlap == Overlapped,
+        "Unexpected completion event: %x, %p, %p\n", CompletionKey, (void*)CompletionValue, (void*)Overlapped);
+}
+
+static void test_JobObject(void) {
+    JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
+    PROCESS_INFORMATION pi[4];
+    STARTUPINFO si[4] = {{0}};
+    HANDLE JobObject;
+    HANDLE IOPort;
+    BOOL ret;
+    BOOL out;
+    char cmdline[MAX_PATH];
+
+    if(!pCreateJobObjectW) {
+        win_skip("No job object support\n");
+        return;
+    }
+
+    sprintf(cmdline, "%s %s %s", myARGV[0], myARGV[1], "wait");
+
+    IOPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
+    ok(IOPort != INVALID_HANDLE_VALUE, "CreateIoCompletionPort (%d)", GetLastError());
+
+    JobObject = pCreateJobObjectW(NULL, NULL);
+    ok(JobObject != INVALID_HANDLE_VALUE, "CreateJobObject (%d)\n", GetLastError());
+
+    Port.CompletionKey = JobObject;
+    Port.CompletionPort = IOPort;
+    ret = pSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
+        "CreateProcess (%d)\n", GetLastError());
+    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
+        "CreateProcess (%d)\n", GetLastError());
+
+    if(pIsProcessInJob) {
+        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
+        ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
+    }
+
+    ret = pAssignProcessToJobObject(JobObject, pi[0].hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    if(pIsProcessInJob) {
+        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
+        ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+    }
+
+    ret = pAssignProcessToJobObject(JobObject, pi[1].hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+ 
+    ok(TerminateProcess(pi[0].hProcess, 0), "TerminateProcess (%d)\n", GetLastError());
+    winetest_wait_child_process(pi[0].hProcess);
+    ok(TerminateProcess(pi[1].hProcess, 0), "TerminateProcess (%d)\n", GetLastError());
+    winetest_wait_child_process(pi[1].hProcess);
+
+    if(pIsProcessInJob) {
+        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
+        todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+    }
+
+    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
+        "CreateProcess: (%d)\n", GetLastError());
+    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[3], &pi[3]),
+        "CreateProcess: (%d)\n", GetLastError());
+
+    ret = pAssignProcessToJobObject(JobObject, pi[2].hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    ret = pAssignProcessToJobObject(JobObject, pi[3].hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    ret = pTerminateJobObject( JobObject, 5 );
+    ok(ret, "TerminateJobObject (%d)\n", GetLastError());
+
+    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[0].dwProcessId);
+    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[1].dwProcessId);
+    test_completion_response(IOPort, 0x7, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[0].dwProcessId);
+    test_completion_response(IOPort, 0x7, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[1].dwProcessId);
+    test_completion_response(IOPort, 0x4, (ULONG_PTR)JobObject, 0);
+    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[2].dwProcessId);
+    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[3].dwProcessId);
+    test_completion_response(IOPort, 0x4, (ULONG_PTR)JobObject, 0);
+
+    /* in case TerminateJobObject is not implemented */
+    TerminateProcess(pi[2].hProcess, 0);
+    TerminateProcess(pi[3].hProcess, 0);
+}
+
 START_TEST(process)
 {
     int b = init();
@@ -2068,7 +2181,10 @@ START_TEST(process)
 
     if (myARGC >= 3)
     {
-        doChild(myARGV[2], (myARGC == 3) ? NULL : myARGV[3]);
+        if(strcmp(myARGV[2], "wait") == 0)
+            Sleep(30000);
+        else
+            doChild(myARGV[2], (myARGC == 3) ? NULL : myARGV[3]);
         return;
     }
     test_TerminateProcess();
@@ -2089,6 +2205,7 @@ START_TEST(process)
     test_SystemInfo();
     test_RegistryQuota();
     test_DuplicateHandle();
+    test_JobObject();
     /* things that can be tested:
      *  lookup:         check the way program to be executed is searched
      *  handles:        check the handle inheritance stuff (+sec options)
