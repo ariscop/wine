@@ -35,21 +35,6 @@ static NTSTATUS (WINAPI *pNtAssignProcessToJobObject)( HANDLE job, HANDLE proces
 static NTSTATUS (WINAPI *pNtIsProcessInJob)( HANDLE process, HANDLE job );
 static NTSTATUS (WINAPI *pNtTerminateJobObject)( HANDLE job, NTSTATUS status );
 
-static DWORD getProcess(PHANDLE handle) {
-    STARTUPINFO startup = {};
-    PROCESS_INFORMATION info = {};
-
-    if(!CreateProcessA(NULL, GetCommandLine(), NULL, NULL, FALSE, 0, NULL, NULL, &startup, &info)) {
-        ok(FALSE, "CreateProcess: %x\n", GetLastError());
-        return 0;
-    }
-
-    CloseHandle(info.hThread);
-    *handle = info.hProcess;
-
-    return info.dwProcessId;
-}
-
 static void test_completion_response(HANDLE IOPort, DWORD eKey, ULONG_PTR eVal, LPOVERLAPPED eOverlap)
 {
     DWORD CompletionKey, ret;
@@ -65,13 +50,16 @@ static void test_completion_response(HANDLE IOPort, DWORD eKey, ULONG_PTR eVal, 
         "Unexpected completion event: %x, %p, %p\n", CompletionKey, (void*)CompletionValue, (void*)Overlapped);
 }
 
-static void test_completion(void) {
+static void test_completion(int argc, char **argv) {
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
-    intptr_t process[4];
-    HANDLE hprocess[4];
+    PROCESS_INFORMATION pi[4];
+    STARTUPINFO si[4] = {{0}};
     HANDLE JobObject;
     HANDLE IOPort;
     NTSTATUS ret;
+    char cmdline[MAX_PATH];
+
+    sprintf(cmdline, "%s %s %s", argv[0], argv[1], "job_member");
 
     IOPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
     ok(IOPort != INVALID_HANDLE_VALUE, "CreateIoCompletionPort: %x", GetLastError());
@@ -81,79 +69,76 @@ static void test_completion(void) {
 
     Port.CompletionKey = JobObject;
     Port.CompletionPort = IOPort;
-    ret = pNtSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation,    &Port, sizeof(Port));
+    ret = pNtSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
     ok(ret == STATUS_SUCCESS, "NtCreateJobObject: %x\n", ret);
 
-    process[0] = getProcess(&hprocess[0]);
-    process[1] = getProcess(&hprocess[1]);
+    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
+        "CreateProcess: %x\n", GetLastError());
+    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
+        "CreateProcess: %x\n", GetLastError());
 
     if(pNtIsProcessInJob)
-        todo_wine ok(pNtIsProcessInJob(hprocess[0], JobObject) == STATUS_PROCESS_NOT_IN_JOB,
+        todo_wine ok(pNtIsProcessInJob(pi[0].hProcess, JobObject) == STATUS_PROCESS_NOT_IN_JOB, 
             "NtIsProcessInJob: expected STATUS_PROCESS_NOT_IN_JOB, got %x\n", ret);
 
-    ret = pNtAssignProcessToJobObject(JobObject, hprocess[0]);
+    ret = pNtAssignProcessToJobObject(JobObject, pi[0].hProcess);
     ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject: %x\n", ret);
 
     if(pNtIsProcessInJob)
-        todo_wine ok(pNtIsProcessInJob(hprocess[0], JobObject) == STATUS_PROCESS_IN_JOB,
+        todo_wine ok(pNtIsProcessInJob(pi[0].hProcess, JobObject) == STATUS_PROCESS_IN_JOB,
             "NtIsProcessInJob: expected STATUS_PROCESS_IN_JOB, got %x\n", ret);
 
-    ret = pNtAssignProcessToJobObject(JobObject, hprocess[1]);
+    ret = pNtAssignProcessToJobObject(JobObject, pi[1].hProcess);
     ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject: %x\n", ret);
-
-    ok(TerminateProcess(hprocess[0], 1), "TerminateProcess: %x\n", GetLastError());
-    Sleep(1000);
-    ok(TerminateProcess(hprocess[1], 2), "TerminateProcess: %x\n", GetLastError());
-    Sleep(1000);
+ 
+    ok(TerminateProcess(pi[0].hProcess, 0), "TerminateProcess: %x\n", GetLastError());
+    winetest_wait_child_process(pi[0].hProcess);
+    ok(TerminateProcess(pi[1].hProcess, 0), "TerminateProcess: %x\n", GetLastError());
+    winetest_wait_child_process(pi[1].hProcess);
 
     if(pNtIsProcessInJob)
-        todo_wine ok(pNtIsProcessInJob(hprocess[0], JobObject) == STATUS_PROCESS_IN_JOB,
+        todo_wine ok(pNtIsProcessInJob(pi[0].hProcess, JobObject) == STATUS_PROCESS_IN_JOB,
             "NtIsProcessInJob: expected STATUS_PROCESS_IN_JOB, got %x\n", ret);
 
-    process[2] = getProcess(&hprocess[2]);
-    process[3] = getProcess(&hprocess[3]);
+    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
+        "CreateProcess: %x\n", GetLastError());
+    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[3], &pi[3]),
+        "CreateProcess: %x\n", GetLastError());
 
-    ret = pNtAssignProcessToJobObject(JobObject, hprocess[2]);
+    ret = pNtAssignProcessToJobObject(JobObject, pi[2].hProcess);
     ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject: %x\n", ret);
 
-    ret = pNtAssignProcessToJobObject(JobObject, hprocess[3]);
+    ret = pNtAssignProcessToJobObject(JobObject, pi[3].hProcess);
     ok(ret == STATUS_SUCCESS, "NtAssignProcessToJobObject: %x\n", ret);
 
     ret = pNtTerminateJobObject( JobObject, 5 );
     ok(ret == STATUS_SUCCESS, "NtTerminateJobObject: %x\n", GetLastError());
 
-    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)process[0]);
-    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)process[1]);
-    test_completion_response(IOPort, 0x7, (ULONG_PTR)JobObject, (LPOVERLAPPED)process[0]);
-    test_completion_response(IOPort, 0x7, (ULONG_PTR)JobObject, (LPOVERLAPPED)process[1]);
+    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[0].dwProcessId);
+    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[1].dwProcessId);
+    test_completion_response(IOPort, 0x7, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[0].dwProcessId);
+    test_completion_response(IOPort, 0x7, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[1].dwProcessId);
     test_completion_response(IOPort, 0x4, (ULONG_PTR)JobObject, 0);
-    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)process[2]);
-    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)process[3]);
+    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[2].dwProcessId);
+    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[3].dwProcessId);
     test_completion_response(IOPort, 0x4, (ULONG_PTR)JobObject, 0);
 
+    /* in case TerminateJobObject is not implemented */
+    TerminateProcess(pi[2].hProcess, 0);
+    TerminateProcess(pi[3].hProcess, 0);
 }
-
-static void is_zombie(void)
-{
-    WCHAR val[32] = {0};
-    static const WCHAR envName[] = { 'T','E','S','T',0 };
-    static const WCHAR envVal[] = { 'J','o','b','O','b','j','e','c','t',0 };
-
-    GetEnvironmentVariableW(envName, val, 32);
-
-    if(lstrcmpW(envVal, val) == 0)
-        /* Wait forever, we've been created for a process handle */
-        while(1) Sleep(INFINITE);
-
-    SetEnvironmentVariableW(envName, envVal);
-}
-
 
 START_TEST(job)
 {
+    char **argv;
+    int argc;
     HMODULE hntdll;
 
-    is_zombie();
+    argc = winetest_get_mainargs(&argv);
+    if (argc >= 3) { /* child, wait till we're terminated */
+        Sleep(30000);
+        return;
+    }
 
     hntdll = GetModuleHandleA("ntdll.dll");
     pNtCreateJobObject = (void*)GetProcAddress(hntdll, "NtCreateJobObject");
@@ -162,5 +147,5 @@ START_TEST(job)
     pNtIsProcessInJob = (void*)GetProcAddress(hntdll, "NtIsProcessInJob");
     pNtTerminateJobObject = (void*)GetProcAddress(hntdll, "NtTerminateJobObject");
 
-    test_completion();
+    test_completion(argc, argv);
 }
