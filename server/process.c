@@ -276,11 +276,8 @@ static void job_dump_info( struct object *obj, int verbose )
 
 static int job_signaled( struct object *obj, struct thread *thread )
 {
-    struct job *job = (struct job*)obj;
-    assert( obj->ops == &job_ops );
-
-    /* TODO: job object should only become signaled after a timeout */
-    return list_count(&job->processes) == 0;
+    /* TODO: job object should become signaled after a timeout */
+    return 0;
 }
 
 struct ptid_entry
