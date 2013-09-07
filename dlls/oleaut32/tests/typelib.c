@@ -1539,6 +1539,7 @@ static void test_CreateTypeLib(SYSKIND sys) {
     static OLECHAR param2W[] = {'p','a','r','a','m','2',0};
     static OLECHAR asdfW[] = {'A','s','d','f',0};
     static OLECHAR aliasW[] = {'a','l','i','a','s',0};
+    static OLECHAR invokeW[] = {'I','n','v','o','k','e',0};
     static OLECHAR *names1[] = {func1W, param1W, param2W};
     static OLECHAR *names2[] = {func2W, param1W, param2W};
     static OLECHAR *propname[] = {prop1W, param1W};
@@ -1555,6 +1556,7 @@ static void test_CreateTypeLib(SYSKIND sys) {
     ITypeLib *tl, *stdole;
     ITypeInfo *interface1, *interface2, *dual, *unknown, *dispatch, *ti;
     ITypeInfo2 *ti2;
+    ITypeComp *tcomp;
     FUNCDESC funcdesc, *pfuncdesc;
     ELEMDESC elemdesc[5], *edesc;
     PARAMDESCEX paramdescex;
@@ -1569,6 +1571,8 @@ static void test_CreateTypeLib(SYSKIND sys) {
     VARIANT cust_data;
     HRESULT hres;
     TYPEKIND kind;
+    DESCKIND desckind;
+    BINDPTR bindptr;
 
     switch(sys){
     case SYS_WIN32:
@@ -3443,6 +3447,34 @@ static void test_CreateTypeLib(SYSKIND sys) {
     ok(typeattr->wMinorVerNum == 0, "wMinorVerNum = %d\n", typeattr->wMinorVerNum);
     ITypeInfo_ReleaseTypeAttr(ti, typeattr);
 
+    hres = ITypeInfo_GetTypeComp(ti, &tcomp);
+    ok(hres == S_OK, "got %08x\n", hres);
+
+    hres = ITypeComp_Bind(tcomp, invokeW, 0, INVOKE_FUNC, &interface1, &desckind, &bindptr);
+    ok(hres == S_OK, "got %08x\n", hres);
+    ok(desckind == DESCKIND_FUNCDESC, "got wrong desckind: 0x%x\n", desckind);
+    ok(bindptr.lpfuncdesc->memid == 0x60010003, "got %x\n", bindptr.lpfuncdesc->memid);
+    ok(bindptr.lpfuncdesc->lprgscode == NULL, "got %p\n", bindptr.lpfuncdesc->lprgscode);
+    ok(bindptr.lpfuncdesc->lprgelemdescParam != NULL, "got %p\n", bindptr.lpfuncdesc->lprgelemdescParam);
+    ok(bindptr.lpfuncdesc->funckind == FUNC_DISPATCH, "got 0x%x\n", bindptr.lpfuncdesc->funckind);
+    ok(bindptr.lpfuncdesc->invkind == INVOKE_FUNC, "got 0x%x\n", bindptr.lpfuncdesc->invkind);
+    ok(bindptr.lpfuncdesc->callconv == CC_STDCALL, "got 0x%x\n", bindptr.lpfuncdesc->callconv);
+    ok(bindptr.lpfuncdesc->cParams == 8, "got %d\n", bindptr.lpfuncdesc->cParams);
+    ok(bindptr.lpfuncdesc->cParamsOpt == 0, "got %d\n", bindptr.lpfuncdesc->cParamsOpt);
+#ifdef _WIN64
+    if(sys == SYS_WIN32)
+        todo_wine ok(bindptr.lpfuncdesc->oVft == 6 * sizeof(void*), "got %x\n", bindptr.lpfuncdesc->oVft);
+    else
+#endif
+        ok(bindptr.lpfuncdesc->oVft == 6 * sizeof(void*), "got %x\n", bindptr.lpfuncdesc->oVft);
+    ok(bindptr.lpfuncdesc->cScodes == 0, "got %d\n", bindptr.lpfuncdesc->cScodes);
+    ok(bindptr.lpfuncdesc->elemdescFunc.tdesc.vt == VT_VOID, "got %d\n", bindptr.lpfuncdesc->elemdescFunc.tdesc.vt);
+    ok(bindptr.lpfuncdesc->wFuncFlags == FUNCFLAG_FRESTRICTED, "got 0x%x\n", bindptr.lpfuncdesc->wFuncFlags);
+
+    ITypeInfo_ReleaseFuncDesc(interface1, bindptr.lpfuncdesc);
+    ITypeInfo_Release(interface1);
+    ITypeComp_Release(tcomp);
+
     hres = ITypeInfo_GetRefTypeOfImplType(ti, -1, &hreftype);
     ok(hres == S_OK, "got %08x\n", hres);
     ok(hreftype == -2, "got wrong hreftype: %x\n", hreftype);
@@ -4287,13 +4319,14 @@ static void test_SetVarDocString(void)
     static OLECHAR nameW[] = {'n','a','m','e',0};
     static OLECHAR doc1W[] = {'d','o','c','1',0};
     static OLECHAR doc2W[] = {'d','o','c','2',0};
+    static OLECHAR var_nameW[] = {'v','a','r','n','a','m','e',0};
     CHAR filenameA[MAX_PATH];
     WCHAR filenameW[MAX_PATH];
     ICreateTypeLib2 *ctl;
     ICreateTypeInfo *cti;
     ITypeLib *tl;
     ITypeInfo *ti;
-    BSTR docstr;
+    BSTR namestr, docstr;
     VARDESC desc, *pdesc;
     HRESULT hr;
     VARIANT v;
@@ -4322,6 +4355,15 @@ static void test_SetVarDocString(void)
     V_INT(&v) = 1;
     U(desc).lpvarValue = &v;
     hr = ICreateTypeInfo_AddVarDesc(cti, 0, &desc);
+    ok(hr == S_OK, "got %08x\n", hr);
+
+    hr = ICreateTypeInfo_SetVarName(cti, 0, NULL);
+    ok(hr == E_INVALIDARG, "got %08x\n", hr);
+
+    hr = ICreateTypeInfo_SetVarName(cti, 1, var_nameW);
+    ok(hr == TYPE_E_ELEMENTNOTFOUND, "got %08x\n", hr);
+
+    hr = ICreateTypeInfo_SetVarName(cti, 0, var_nameW);
     ok(hr == S_OK, "got %08x\n", hr);
 
     hr = ICreateTypeInfo_SetVarDocString(cti, 0, NULL);
@@ -4359,10 +4401,12 @@ static void test_SetVarDocString(void)
     ok(V_VT(U(pdesc)->lpvarValue) == VT_INT, "got wrong value type: %u\n", V_VT(U(pdesc)->lpvarValue));
     ok(V_INT(U(pdesc)->lpvarValue) == 1, "got wrong value: 0x%x\n", V_INT(U(pdesc)->lpvarValue));
 
-    hr = ITypeInfo_GetDocumentation(ti, pdesc->memid, NULL, &docstr, NULL, NULL);
+    hr = ITypeInfo_GetDocumentation(ti, pdesc->memid, &namestr, &docstr, NULL, NULL);
     ok(hr == S_OK, "got %08x\n", hr);
+    ok(memcmp(namestr, var_nameW, sizeof(var_nameW)) == 0, "got wrong name: %s\n", wine_dbgstr_w(namestr));
     ok(memcmp(docstr, doc2W, sizeof(doc2W)) == 0, "got wrong docstring: %s\n", wine_dbgstr_w(docstr));
 
+    SysFreeString(namestr);
     SysFreeString(docstr);
 
     ITypeInfo_ReleaseVarDesc(ti, pdesc);

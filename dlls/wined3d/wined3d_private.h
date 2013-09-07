@@ -1710,6 +1710,10 @@ const struct ffp_frag_desc *find_ffp_frag_shader(const struct wine_rb_tree *frag
         const struct ffp_frag_settings *settings) DECLSPEC_HIDDEN;
 void add_ffp_frag_shader(struct wine_rb_tree *shaders, struct ffp_frag_desc *desc) DECLSPEC_HIDDEN;
 void wined3d_get_draw_rect(const struct wined3d_state *state, RECT *rect) DECLSPEC_HIDDEN;
+void wined3d_ftoa(float value, char *s) DECLSPEC_HIDDEN;
+
+extern const float wined3d_srgb_const0[] DECLSPEC_HIDDEN;
+extern const float wined3d_srgb_const1[] DECLSPEC_HIDDEN;
 
 enum wined3d_ffp_vs_fog_mode
 {
@@ -2912,6 +2916,7 @@ extern enum wined3d_format_id pixelformat_for_depth(DWORD depth) DECLSPEC_HIDDEN
 #define WINED3DFMT_FLAG_BLOCKS                      0x00020000
 #define WINED3DFMT_FLAG_HEIGHT_SCALE                0x00040000
 #define WINED3DFMT_FLAG_TEXTURE                     0x00080000
+#define WINED3DFMT_FLAG_BLOCKS_NO_VERIFY            0x00100000
 
 struct wined3d_rational
 {
