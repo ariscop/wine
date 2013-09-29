@@ -4735,7 +4735,7 @@ static GLhandleARB find_glsl_vshader(const struct wined3d_context *context,
 {
     UINT i;
     DWORD new_size;
-    DWORD use_map = shader->device->stream_info.use_map;
+    DWORD use_map = context->stream_info.use_map;
     struct glsl_vs_compiled_shader *gl_shaders, *new_array;
     struct glsl_shader_private *shader_data;
     GLhandleARB ret;
@@ -5783,7 +5783,6 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
     GLhandleARB gs_id = 0;
     GLhandleARB ps_id = 0;
     struct list *ps_list, *vs_list;
-    struct wined3d_device *device = context->swapchain->device;
 
     if (!(context->shader_update_mask & (1 << WINED3D_SHADER_TYPE_VERTEX)))
     {
@@ -5807,7 +5806,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
         struct vs_compile_args vs_compile_args;
         vshader = state->vertex_shader;
 
-        find_vs_compile_args(state, vshader, &vs_compile_args);
+        find_vs_compile_args(state, vshader, context->stream_info.swizzle_map, &vs_compile_args);
         vs_id = find_glsl_vshader(context, &priv->shader_buffer, vshader, &vs_compile_args);
         vs_list = &vshader->linked_programs;
 
@@ -5819,7 +5818,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
         struct glsl_ffp_vertex_shader *ffp_shader;
         struct wined3d_ffp_vs_settings settings;
 
-        wined3d_ffp_get_vs_settings(state, &device->stream_info, &settings);
+        wined3d_ffp_get_vs_settings(state, &context->stream_info, &settings);
         ffp_shader = shader_glsl_find_ffp_vertex_shader(priv, gl_info, &settings);
         vs_id = ffp_shader->id;
         vs_list = &ffp_shader->linked_programs;
@@ -5837,7 +5836,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
     {
         struct ps_compile_args ps_compile_args;
         pshader = state->pixel_shader;
-        find_ps_compile_args(state, pshader, &ps_compile_args);
+        find_ps_compile_args(state, pshader, context->stream_info.position_transformed, &ps_compile_args, gl_info);
         ps_id = find_glsl_pshader(context, &priv->shader_buffer,
                 pshader, &ps_compile_args, &np2fixup_info);
         ps_list = &pshader->linked_programs;
@@ -5985,8 +5984,8 @@ static void set_glsl_shader_program(const struct wined3d_context *context, const
      * fixed function fragment processing setups. So once the program is linked these samplers
      * won't change.
      */
-    shader_glsl_load_vsamplers(gl_info, device->texUnitMap, programId);
-    shader_glsl_load_psamplers(gl_info, device->texUnitMap, programId);
+    shader_glsl_load_vsamplers(gl_info, context->tex_unit_map, programId);
+    shader_glsl_load_psamplers(gl_info, context->tex_unit_map, programId);
 
     entry->constant_update_mask = 0;
     if (vshader)

@@ -851,43 +851,85 @@ todo_wine
 
 static void append_file_test(void)
 {
-    const char text[] = "foobar";
+    static const char text[6] = "foobar";
     HANDLE handle;
     NTSTATUS status;
     IO_STATUS_BLOCK iosb;
-    DWORD written;
-    char path[MAX_PATH], buffer[MAX_PATH];
+    LARGE_INTEGER offset;
+    char path[MAX_PATH], buffer[MAX_PATH], buf[16];
 
     GetTempPathA( MAX_PATH, path );
     GetTempFileNameA( path, "foo", 0, buffer );
-    /* It is possible to open a file with only FILE_APPEND_DATA access flags.
-       It matches the O_WRONLY|O_APPEND open() posix behavior */
-    handle = CreateFileA(buffer, FILE_APPEND_DATA, 0, NULL, CREATE_ALWAYS,
-                         FILE_FLAG_DELETE_ON_CLOSE, 0);
-    ok( handle != INVALID_HANDLE_VALUE, "Failed to create a temp file in FILE_APPEND_DATA mode.\n" );
-    if(handle == INVALID_HANDLE_VALUE)
-    {
-        skip("Couldn't create a temporary file, skipping FILE_APPEND_DATA test\n");
-        return;
-    }
 
-    U(iosb).Status = STATUS_PENDING;
-    iosb.Information = 0;
+    handle = CreateFile(buffer, FILE_WRITE_DATA, 0, NULL, CREATE_ALWAYS, 0, 0);
+    ok(handle != INVALID_HANDLE_VALUE, "CreateFile error %d\n", GetLastError());
 
-    status = pNtWriteFile(handle, NULL, NULL, NULL, &iosb,
-                          text, sizeof(text), NULL, NULL);
-
-    if (status == STATUS_PENDING)
-    {
-        WaitForSingleObject( handle, 1000 );
-        status = U(iosb).Status;
-    }
-    written = iosb.Information;
-
-    todo_wine
-    ok(status == STATUS_SUCCESS && written == sizeof(text), "FILE_APPEND_DATA NtWriteFile failed\n");
+    U(iosb).Status = -1;
+    iosb.Information = -1;
+    status = pNtWriteFile(handle, NULL, NULL, NULL, &iosb, text, 3, NULL, NULL);
+    ok(status == STATUS_SUCCESS, "NtWriteFile error %#x\n", status);
+    ok(iosb.Status == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %#x\n", iosb.Status);
+    ok(iosb.Information == 3, "expected 3, got %lu\n", iosb.Information);
 
     CloseHandle(handle);
+
+    /* It is possible to open a file with only FILE_APPEND_DATA access flags.
+       It matches the O_WRONLY|O_APPEND open() posix behavior */
+    handle = CreateFile(buffer, FILE_APPEND_DATA, 0, NULL, OPEN_EXISTING, 0, 0);
+    ok(handle != INVALID_HANDLE_VALUE, "CreateFile error %d\n", GetLastError());
+
+    U(iosb).Status = -1;
+    iosb.Information = -1;
+    offset.QuadPart = 0;
+    status = pNtWriteFile(handle, NULL, NULL, NULL, &iosb, text + 3, 3, &offset, NULL);
+todo_wine
+    ok(status == STATUS_SUCCESS, "NtWriteFile error %#x\n", status);
+todo_wine
+    ok(iosb.Status == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %#x\n", iosb.Status);
+todo_wine
+    ok(iosb.Information == 3, "expected 3, got %lu\n", iosb.Information);
+
+    CloseHandle(handle);
+
+    handle = CreateFile(buffer, FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA, 0, NULL, OPEN_EXISTING, 0, 0);
+    ok(handle != INVALID_HANDLE_VALUE, "CreateFile error %d\n", GetLastError());
+
+    memset(buf, 0, sizeof(buf));
+    U(iosb).Status = -1;
+    iosb.Information = -1;
+    offset.QuadPart = 0;
+    status = pNtReadFile(handle, 0, NULL, NULL, &iosb, buf, sizeof(buf), &offset, NULL);
+    ok(status == STATUS_SUCCESS, "NtReadFile error %#x\n", status);
+    ok(iosb.Status == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %#x\n", iosb.Status);
+todo_wine
+    ok(iosb.Information == 6, "expected 6, got %lu\n", iosb.Information);
+    buf[6] = 0;
+todo_wine
+    ok(memcmp(buf, text, 6) == 0, "wrong file contents: %s\n", buf);
+
+    U(iosb).Status = -1;
+    iosb.Information = -1;
+    offset.QuadPart = 0;
+    status = pNtWriteFile(handle, NULL, NULL, NULL, &iosb, text + 3, 3, &offset, NULL);
+    ok(status == STATUS_SUCCESS, "NtWriteFile error %#x\n", status);
+    ok(iosb.Status == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %#x\n", iosb.Status);
+    ok(iosb.Information == 3, "expected 3, got %lu\n", iosb.Information);
+
+    memset(buf, 0, sizeof(buf));
+    U(iosb).Status = -1;
+    iosb.Information = -1;
+    offset.QuadPart = 0;
+    status = pNtReadFile(handle, 0, NULL, NULL, &iosb, buf, sizeof(buf), &offset, NULL);
+    ok(status == STATUS_SUCCESS, "NtReadFile error %#x\n", status);
+    ok(iosb.Status == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %#x\n", iosb.Status);
+todo_wine
+    ok(iosb.Information == 6, "expected 6, got %lu\n", iosb.Information);
+    buf[6] = 0;
+todo_wine
+    ok(memcmp(buf, "barbar", 6) == 0, "wrong file contents: %s\n", buf);
+
+    CloseHandle(handle);
+    DeleteFile(buffer);
 }
 
 static void nt_mailslot_test(void)
@@ -1302,7 +1344,7 @@ static void test_file_both_information(void)
 
 static void test_file_disposition_information(void)
 {
-    char buffer[MAX_PATH + 16];
+    char tmp_path[MAX_PATH], buffer[MAX_PATH + 16];
     DWORD dirpos;
     HANDLE handle, handle2;
     NTSTATUS res;
@@ -1310,8 +1352,10 @@ static void test_file_disposition_information(void)
     FILE_DISPOSITION_INFORMATION fdi;
     BOOL fileDeleted;
 
+    GetTempPathA( MAX_PATH, tmp_path );
+
     /* cannot set disposition on file not opened with delete access */
-    GetTempFileNameA( ".", "dis", 0, buffer );
+    GetTempFileNameA( tmp_path, "dis", 0, buffer );
     handle = CreateFileA(buffer, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, 0);
     ok( handle != INVALID_HANDLE_VALUE, "failed to create temp file\n" );
     res = pNtQueryInformationFile( handle, &io, &fdi, sizeof fdi, FileDispositionInformation );
@@ -1326,7 +1370,7 @@ static void test_file_disposition_information(void)
     DeleteFileA( buffer );
 
     /* can set disposition on file opened with proper access */
-    GetTempFileNameA( ".", "dis", 0, buffer );
+    GetTempFileNameA( tmp_path, "dis", 0, buffer );
     handle = CreateFileA(buffer, GENERIC_WRITE | DELETE, 0, NULL, CREATE_ALWAYS, 0, 0);
     ok( handle != INVALID_HANDLE_VALUE, "failed to create temp file\n" );
     fdi.DoDeleteFile = TRUE;
@@ -1340,7 +1384,7 @@ static void test_file_disposition_information(void)
     DeleteFileA( buffer );
 
     /* cannot set disposition on readonly file */
-    GetTempFileNameA( ".", "dis", 0, buffer );
+    GetTempFileNameA( tmp_path, "dis", 0, buffer );
     handle = CreateFileA(buffer, GENERIC_WRITE | DELETE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_READONLY, 0);
     ok( handle != INVALID_HANDLE_VALUE, "failed to create temp file\n" );
     fdi.DoDeleteFile = TRUE;
@@ -1354,7 +1398,7 @@ static void test_file_disposition_information(void)
     DeleteFileA( buffer );
 
     /* can set disposition on file and then reset it */
-    GetTempFileNameA( ".", "dis", 0, buffer );
+    GetTempFileNameA( tmp_path, "dis", 0, buffer );
     handle = CreateFileA(buffer, GENERIC_WRITE | DELETE, 0, NULL, CREATE_ALWAYS, 0, 0);
     ok( handle != INVALID_HANDLE_VALUE, "failed to create temp file\n" );
     fdi.DoDeleteFile = TRUE;
@@ -1371,7 +1415,7 @@ static void test_file_disposition_information(void)
     DeleteFileA( buffer );
 
     /* Delete-on-close flag doesn't change file disposition until a handle is closed */
-    GetTempFileNameA( ".", "dis", 0, buffer );
+    GetTempFileNameA( tmp_path, "dis", 0, buffer );
     handle = CreateFileA(buffer, GENERIC_WRITE | DELETE, 0, NULL, CREATE_ALWAYS, FILE_FLAG_DELETE_ON_CLOSE, 0);
     ok( handle != INVALID_HANDLE_VALUE, "failed to create temp file\n" );
     fdi.DoDeleteFile = FALSE;
@@ -1384,7 +1428,7 @@ static void test_file_disposition_information(void)
     DeleteFileA( buffer );
 
     /* Delete-on-close flag sets disposition when a handle is closed and then it could be changed back */
-    GetTempFileNameA( ".", "dis", 0, buffer );
+    GetTempFileNameA( tmp_path, "dis", 0, buffer );
     handle = CreateFileA(buffer, GENERIC_WRITE | DELETE, 0, NULL, CREATE_ALWAYS, FILE_FLAG_DELETE_ON_CLOSE, 0);
     ok( handle != INVALID_HANDLE_VALUE, "failed to create temp file\n" );
     ok( DuplicateHandle( GetCurrentProcess(), handle, GetCurrentProcess(), &handle2, 0, FALSE, DUPLICATE_SAME_ACCESS ), "DuplicateHandle failed\n" );
@@ -1399,7 +1443,7 @@ static void test_file_disposition_information(void)
     DeleteFileA( buffer );
 
     /* can set disposition on a directory opened with proper access */
-    GetTempFileNameA( ".", "dis", 0, buffer );
+    GetTempFileNameA( tmp_path, "dis", 0, buffer );
     DeleteFileA( buffer );
     ok( CreateDirectoryA( buffer, NULL ), "CreateDirectory failed\n" );
     handle = CreateFileA(buffer, DELETE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
@@ -1415,7 +1459,7 @@ static void test_file_disposition_information(void)
     RemoveDirectoryA( buffer );
 
     /* RemoveDirectory sets directory disposition and it can be undone */
-    GetTempFileNameA( ".", "dis", 0, buffer );
+    GetTempFileNameA( tmp_path, "dis", 0, buffer );
     DeleteFileA( buffer );
     ok( CreateDirectoryA( buffer, NULL ), "CreateDirectory failed\n" );
     handle = CreateFileA(buffer, DELETE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
@@ -1431,7 +1475,7 @@ static void test_file_disposition_information(void)
     RemoveDirectoryA( buffer );
 
     /* cannot set disposition on a non-empty directory */
-    GetTempFileNameA( ".", "dis", 0, buffer );
+    GetTempFileNameA( tmp_path, "dis", 0, buffer );
     DeleteFileA( buffer );
     ok( CreateDirectoryA( buffer, NULL ), "CreateDirectory failed\n" );
     handle = CreateFileA(buffer, DELETE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
@@ -1976,27 +2020,26 @@ static void test_read_write(void)
     iob.Information = -1;
     offset.QuadPart = (LONGLONG)-1 /* FILE_WRITE_TO_END_OF_FILE */;
     status = pNtWriteFile(hfile, 0, NULL, NULL, &iob, contents + 7, sizeof(contents) - 7, &offset, NULL);
-todo_wine
     ok(status == STATUS_SUCCESS, "NtWriteFile error %#x\n", status);
-todo_wine
     ok(iob.Status == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %#x\n", iob.Status);
-todo_wine
     ok(iob.Information == sizeof(contents) - 7, "expected sizeof(contents)-7, got %lu\n", iob.Information);
-
-    /* FIXME: Remove once Wine is fixed */
-    if (status != STATUS_SUCCESS)
-    {
-        iob.Status = -1;
-        iob.Information = -1;
-        offset.QuadPart = 7;
-        status = pNtWriteFile(hfile, 0, NULL, NULL, &iob, contents + 7, sizeof(contents) - 7, &offset, NULL);
-        ok(status == STATUS_SUCCESS, "NtWriteFile error %#x\n", status);
-        ok(iob.Status == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %#x\n", iob.Status);
-        ok(iob.Information == sizeof(contents) - 7, "expected sizeof(contents)-7, got %lu\n", iob.Information);
-    }
 
     off = SetFilePointer(hfile, 0, NULL, FILE_CURRENT);
     ok(off == sizeof(contents), "expected sizeof(contents), got %u\n", off);
+
+    bytes = 0xdeadbeef;
+    SetLastError(0xdeadbeef);
+    ret = ReadFile(INVALID_HANDLE_VALUE, buf, 0, &bytes, NULL);
+    ok(!ret, "ReadFile should fail\n");
+    ok(GetLastError() == ERROR_INVALID_HANDLE, "expected ERROR_INVALID_HANDLE, got %d\n", GetLastError());
+    ok(bytes == 0, "bytes %u\n", bytes);
+
+    bytes = 0xdeadbeef;
+    SetLastError(0xdeadbeef);
+    ret = ReadFile(hfile, buf, 0, &bytes, NULL);
+    ok(ret, "ReadFile error %d\n", GetLastError());
+    ok(GetLastError() == 0xdeadbeef, "expected 0xdeadbeef, got %d\n", GetLastError());
+    ok(bytes == 0, "bytes %u\n", bytes);
 
     bytes = 0xdeadbeef;
     SetLastError(0xdeadbeef);
@@ -2199,6 +2242,28 @@ todo_wine
 
     bytes = 0xdeadbeef;
     SetLastError(0xdeadbeef);
+    ret = ReadFile(INVALID_HANDLE_VALUE, buf, 0, &bytes, NULL);
+    ok(!ret, "ReadFile should fail\n");
+    ok(GetLastError() == ERROR_INVALID_HANDLE, "expected ERROR_INVALID_HANDLE, got %d\n", GetLastError());
+    ok(bytes == 0, "bytes %u\n", bytes);
+
+    S(U(ovl)).Offset = 0;
+    S(U(ovl)).OffsetHigh = 0;
+    ovl.Internal = -1;
+    ovl.InternalHigh = -1;
+    ovl.hEvent = 0;
+    bytes = 0xdeadbeef;
+    SetLastError(0xdeadbeef);
+    ret = ReadFile(hfile, buf, 0, &bytes, &ovl);
+    /* ReadFile return value depends on Windows version and testing it is not practical */
+    if (!ret) ok(GetLastError() == ERROR_IO_PENDING, "expected ERROR_IO_PENDING, got %d\n", GetLastError());
+    ok(bytes == 0, "bytes %u\n", bytes);
+todo_wine
+    ok((NTSTATUS)ovl.Internal == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %#lx\n", ovl.Internal);
+    ok(ovl.InternalHigh == 0, "expected 0, got %lu\n", ovl.InternalHigh);
+
+    bytes = 0xdeadbeef;
+    SetLastError(0xdeadbeef);
     ret = WriteFile(hfile, contents, sizeof(contents), &bytes, NULL);
     ok(!ret, "WriteFile should fail\n");
     ok(GetLastError() == ERROR_INVALID_PARAMETER, "expected ERROR_INVALID_PARAMETER, got %d\n", GetLastError());
@@ -2213,9 +2278,6 @@ todo_wine
 
     for (i = -20; i < -1; i++)
     {
-        /* FIXME: Remove once Wine is fixed */
-        if (i == -2) continue;
-
         iob.Status = -1;
         iob.Information = -1;
         offset.QuadPart = (LONGLONG)i;
@@ -2224,17 +2286,6 @@ todo_wine
         ok(iob.Status == -1, "expected -1, got %#x\n", iob.Status);
         ok(iob.Information == -1, "expected -1, got %ld\n", iob.Information);
     }
-
-    iob.Status = -1;
-    iob.Information = -1;
-    offset.QuadPart = (LONGLONG)-2 /* FILE_USE_FILE_POINTER_POSITION */;
-    status = pNtWriteFile(hfile, 0, NULL, NULL, &iob, contents, sizeof(contents), &offset, NULL);
-todo_wine
-    ok(status == STATUS_INVALID_PARAMETER, "expected STATUS_INVALID_PARAMETER, got %#x\n", status);
-todo_wine
-    ok(iob.Status == -1, "expected -1, got %#x\n", iob.Status);
-todo_wine
-    ok(iob.Information == -1, "expected -1, got %ld\n", iob.Information);
 
     iob.Status = -1;
     iob.Information = -1;

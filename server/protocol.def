@@ -2244,6 +2244,7 @@ enum message_type
     unsigned int writeconst;
     unsigned int writemult;
     unsigned int eventmask;
+    unsigned int cookie;
 @END
 
 

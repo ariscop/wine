@@ -67,7 +67,8 @@ typedef struct
     char callback_name_strings[MAX_ENUMERATION_COUNT][100];
 } D3D7ELifetimeTest;
 
-static HRESULT (WINAPI *pDirectDrawCreateEx)(LPGUID,LPVOID*,REFIID,LPUNKNOWN);
+static HRESULT (WINAPI *pDirectDrawCreateEx)(GUID *driver_guid,
+        void **ddraw, REFIID interface_iid, IUnknown *outer);
 
 static void init_function_pointers(void)
 {
@@ -510,7 +511,8 @@ static void LimitTest(void)
     IDirectDrawSurface7_Release(pTexture);
 }
 
-static HRESULT WINAPI enumDevicesCallback(GUID *Guid,LPSTR DeviceDescription,LPSTR DeviceName, D3DDEVICEDESC *hal, D3DDEVICEDESC *hel, VOID *ctx)
+static HRESULT WINAPI enumDevicesCallback(GUID *Guid, char *DeviceDescription,
+        char *DeviceName, D3DDEVICEDESC *hal, D3DDEVICEDESC *hel, void *ctx)
 {
     UINT ver = *((UINT *) ctx);
     if(IsEqualGUID(&IID_IDirect3DRGBDevice, Guid))

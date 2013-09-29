@@ -3115,6 +3115,8 @@ struct get_serial_info_reply
     unsigned int writeconst;
     unsigned int writemult;
     unsigned int eventmask;
+    unsigned int cookie;
+    char __pad_36[4];
 };
 
 

@@ -1350,6 +1350,21 @@ struct wined3d_context *context_create(struct wined3d_swapchain *swapchain,
         goto out;
     }
 
+    /* Initialize the texture unit mapping to a 1:1 mapping */
+    for (s = 0; s < MAX_COMBINED_SAMPLERS; ++s)
+    {
+        if (s < gl_info->limits.fragment_samplers)
+        {
+            ret->tex_unit_map[s] = s;
+            ret->rev_tex_unit_map[s] = s;
+        }
+        else
+        {
+            ret->tex_unit_map[s] = WINED3D_UNMAPPED_STAGE;
+            ret->rev_tex_unit_map[s] = WINED3D_UNMAPPED_STAGE;
+        }
+    }
+
     if (!(hdc = GetDC(swapchain->win_handle)))
     {
         WARN("Failed to retireve device context, trying swapchain backup.\n");
@@ -1772,7 +1787,7 @@ static void SetupForBlit(const struct wined3d_device *device, struct wined3d_con
      */
     for (i = gl_info->limits.textures - 1; i > 0 ; --i)
     {
-        sampler = device->rev_tex_unit_map[i];
+        sampler = context->rev_tex_unit_map[i];
         context_active_texture(context, gl_info, i);
 
         if (gl_info->supported[ARB_TEXTURE_CUBE_MAP])
@@ -1802,7 +1817,7 @@ static void SetupForBlit(const struct wined3d_device *device, struct wined3d_con
     }
     context_active_texture(context, gl_info, 0);
 
-    sampler = device->rev_tex_unit_map[0];
+    sampler = context->rev_tex_unit_map[0];
 
     if (gl_info->supported[ARB_TEXTURE_CUBE_MAP])
     {
@@ -2123,7 +2138,7 @@ void context_apply_blit_state(struct wined3d_context *context, const struct wine
 
         if (context->render_offscreen)
         {
-            surface_internal_preload(rt, SRGB_RGB);
+            surface_internal_preload(rt, context, SRGB_RGB);
 
             context_apply_fbo_state_blit(context, GL_FRAMEBUFFER, rt, NULL, rt->draw_binding);
             if (rt->resource.format->id != WINED3DFMT_NULL)
@@ -2328,6 +2343,221 @@ void context_state_fb(struct wined3d_context *context, const struct wined3d_stat
     }
 }
 
+static void context_map_stage(struct wined3d_context *context, DWORD stage, DWORD unit)
+{
+    DWORD i = context->rev_tex_unit_map[unit];
+    DWORD j = context->tex_unit_map[stage];
+
+    context->tex_unit_map[stage] = unit;
+    if (i != WINED3D_UNMAPPED_STAGE && i != stage)
+        context->tex_unit_map[i] = WINED3D_UNMAPPED_STAGE;
+
+    context->rev_tex_unit_map[unit] = stage;
+    if (j != WINED3D_UNMAPPED_STAGE && j != unit)
+        context->rev_tex_unit_map[j] = WINED3D_UNMAPPED_STAGE;
+}
+
+static void context_invalidate_texture_stage(struct wined3d_context *context, DWORD stage)
+{
+    DWORD i;
+
+    for (i = 0; i <= WINED3D_HIGHEST_TEXTURE_STATE; ++i)
+        context_invalidate_state(context, STATE_TEXTURESTAGE(stage, i));
+}
+
+static void context_update_fixed_function_usage_map(struct wined3d_context *context,
+        const struct wined3d_state *state)
+{
+    UINT i;
+
+    context->fixed_function_usage_map = 0;
+    for (i = 0; i < MAX_TEXTURES; ++i)
+    {
+        enum wined3d_texture_op color_op = state->texture_states[i][WINED3D_TSS_COLOR_OP];
+        enum wined3d_texture_op alpha_op = state->texture_states[i][WINED3D_TSS_ALPHA_OP];
+        DWORD color_arg1 = state->texture_states[i][WINED3D_TSS_COLOR_ARG1] & WINED3DTA_SELECTMASK;
+        DWORD color_arg2 = state->texture_states[i][WINED3D_TSS_COLOR_ARG2] & WINED3DTA_SELECTMASK;
+        DWORD color_arg3 = state->texture_states[i][WINED3D_TSS_COLOR_ARG0] & WINED3DTA_SELECTMASK;
+        DWORD alpha_arg1 = state->texture_states[i][WINED3D_TSS_ALPHA_ARG1] & WINED3DTA_SELECTMASK;
+        DWORD alpha_arg2 = state->texture_states[i][WINED3D_TSS_ALPHA_ARG2] & WINED3DTA_SELECTMASK;
+        DWORD alpha_arg3 = state->texture_states[i][WINED3D_TSS_ALPHA_ARG0] & WINED3DTA_SELECTMASK;
+
+        /* Not used, and disable higher stages. */
+        if (color_op == WINED3D_TOP_DISABLE)
+            break;
+
+        if (((color_arg1 == WINED3DTA_TEXTURE) && color_op != WINED3D_TOP_SELECT_ARG2)
+                || ((color_arg2 == WINED3DTA_TEXTURE) && color_op != WINED3D_TOP_SELECT_ARG1)
+                || ((color_arg3 == WINED3DTA_TEXTURE)
+                    && (color_op == WINED3D_TOP_MULTIPLY_ADD || color_op == WINED3D_TOP_LERP))
+                || ((alpha_arg1 == WINED3DTA_TEXTURE) && alpha_op != WINED3D_TOP_SELECT_ARG2)
+                || ((alpha_arg2 == WINED3DTA_TEXTURE) && alpha_op != WINED3D_TOP_SELECT_ARG1)
+                || ((alpha_arg3 == WINED3DTA_TEXTURE)
+                    && (alpha_op == WINED3D_TOP_MULTIPLY_ADD || alpha_op == WINED3D_TOP_LERP)))
+            context->fixed_function_usage_map |= (1 << i);
+
+        if ((color_op == WINED3D_TOP_BUMPENVMAP || color_op == WINED3D_TOP_BUMPENVMAP_LUMINANCE)
+                && i < MAX_TEXTURES - 1)
+            context->fixed_function_usage_map |= (1 << (i + 1));
+    }
+}
+
+static void context_map_fixed_function_samplers(struct wined3d_context *context,
+        const struct wined3d_state *state)
+{
+    unsigned int i, tex;
+    WORD ffu_map;
+    const struct wined3d_d3d_info *d3d_info = context->d3d_info;
+
+    context_update_fixed_function_usage_map(context, state);
+    ffu_map = context->fixed_function_usage_map;
+
+    if (d3d_info->limits.ffp_textures == d3d_info->limits.ffp_blend_stages
+            || state->lowest_disabled_stage <= d3d_info->limits.ffp_textures)
+    {
+        for (i = 0; ffu_map; ffu_map >>= 1, ++i)
+        {
+            if (!(ffu_map & 1))
+                continue;
+
+            if (context->tex_unit_map[i] != i)
+            {
+                context_map_stage(context, i, i);
+                context_invalidate_state(context, STATE_SAMPLER(i));
+                context_invalidate_texture_stage(context, i);
+            }
+        }
+        return;
+    }
+
+    /* Now work out the mapping */
+    tex = 0;
+    for (i = 0; ffu_map; ffu_map >>= 1, ++i)
+    {
+        if (!(ffu_map & 1))
+            continue;
+
+        if (context->tex_unit_map[i] != tex)
+        {
+            context_map_stage(context, i, tex);
+            context_invalidate_state(context, STATE_SAMPLER(i));
+            context_invalidate_texture_stage(context, i);
+        }
+
+        ++tex;
+    }
+}
+
+static void context_map_psamplers(struct wined3d_context *context, const struct wined3d_state *state)
+{
+    const enum wined3d_sampler_texture_type *sampler_type =
+            state->pixel_shader->reg_maps.sampler_type;
+    unsigned int i;
+    const struct wined3d_d3d_info *d3d_info = context->d3d_info;
+
+    for (i = 0; i < MAX_FRAGMENT_SAMPLERS; ++i)
+    {
+        if (sampler_type[i] && context->tex_unit_map[i] != i)
+        {
+            context_map_stage(context, i, i);
+            context_invalidate_state(context, STATE_SAMPLER(i));
+            if (i < d3d_info->limits.ffp_blend_stages)
+                context_invalidate_texture_stage(context, i);
+        }
+    }
+}
+
+static BOOL context_unit_free_for_vs(const struct wined3d_context *context,
+        const enum wined3d_sampler_texture_type *pshader_sampler_tokens,
+        const enum wined3d_sampler_texture_type *vshader_sampler_tokens, DWORD unit)
+{
+    DWORD current_mapping = context->rev_tex_unit_map[unit];
+
+    /* Not currently used */
+    if (current_mapping == WINED3D_UNMAPPED_STAGE)
+        return TRUE;
+
+    if (current_mapping < MAX_FRAGMENT_SAMPLERS)
+    {
+        /* Used by a fragment sampler */
+
+        if (!pshader_sampler_tokens)
+        {
+            /* No pixel shader, check fixed function */
+            return current_mapping >= MAX_TEXTURES || !(context->fixed_function_usage_map & (1 << current_mapping));
+        }
+
+        /* Pixel shader, check the shader's sampler map */
+        return !pshader_sampler_tokens[current_mapping];
+    }
+
+    /* Used by a vertex sampler */
+    return !vshader_sampler_tokens[current_mapping - MAX_FRAGMENT_SAMPLERS];
+}
+
+static void context_map_vsamplers(struct wined3d_context *context, BOOL ps, const struct wined3d_state *state)
+{
+    const enum wined3d_sampler_texture_type *vshader_sampler_type =
+            state->vertex_shader->reg_maps.sampler_type;
+    const enum wined3d_sampler_texture_type *pshader_sampler_type = NULL;
+    const struct wined3d_gl_info *gl_info = context->gl_info;
+    int start = min(MAX_COMBINED_SAMPLERS, gl_info->limits.combined_samplers) - 1;
+    int i;
+
+    if (ps)
+    {
+        /* Note that we only care if a sampler is sampled or not, not the sampler's specific type.
+         * Otherwise we'd need to call shader_update_samplers() here for 1.x pixelshaders. */
+        pshader_sampler_type = state->pixel_shader->reg_maps.sampler_type;
+    }
+
+    for (i = 0; i < MAX_VERTEX_SAMPLERS; ++i) {
+        DWORD vsampler_idx = i + MAX_FRAGMENT_SAMPLERS;
+        if (vshader_sampler_type[i])
+        {
+            if (context->tex_unit_map[vsampler_idx] != WINED3D_UNMAPPED_STAGE)
+            {
+                /* Already mapped somewhere */
+                continue;
+            }
+
+            while (start >= 0)
+            {
+                if (context_unit_free_for_vs(context, pshader_sampler_type, vshader_sampler_type, start))
+                {
+                    context_map_stage(context, vsampler_idx, start);
+                    context_invalidate_state(context, STATE_SAMPLER(vsampler_idx));
+
+                    --start;
+                    break;
+                }
+
+                --start;
+            }
+        }
+    }
+}
+
+static void context_update_tex_unit_map(struct wined3d_context *context, const struct wined3d_state *state)
+{
+    BOOL vs = use_vs(state);
+    BOOL ps = use_ps(state);
+    /*
+     * Rules are:
+     * -> Pixel shaders need a 1:1 map. In theory the shader input could be mapped too, but
+     * that would be really messy and require shader recompilation
+     * -> When the mapping of a stage is changed, sampler and ALL texture stage states have
+     * to be reset. Because of that try to work with a 1:1 mapping as much as possible
+     */
+    if (ps)
+        context_map_psamplers(context, state);
+    else
+        context_map_fixed_function_samplers(context, state);
+
+    if (vs)
+        context_map_vsamplers(context, ps, state);
+}
+
 /* Context activation is done by the caller. */
 void context_state_drawbuf(struct wined3d_context *context, const struct wined3d_state *state, DWORD state_id)
 {
@@ -2342,6 +2572,265 @@ void context_state_drawbuf(struct wined3d_context *context, const struct wined3d
     {
         context_apply_draw_buffers(context, rt_mask);
         *cur_mask = rt_mask;
+    }
+}
+
+static BOOL fixed_get_input(BYTE usage, BYTE usage_idx, unsigned int *regnum)
+{
+    if ((usage == WINED3D_DECL_USAGE_POSITION || usage == WINED3D_DECL_USAGE_POSITIONT) && !usage_idx)
+        *regnum = WINED3D_FFP_POSITION;
+    else if (usage == WINED3D_DECL_USAGE_BLEND_WEIGHT && !usage_idx)
+        *regnum = WINED3D_FFP_BLENDWEIGHT;
+    else if (usage == WINED3D_DECL_USAGE_BLEND_INDICES && !usage_idx)
+        *regnum = WINED3D_FFP_BLENDINDICES;
+    else if (usage == WINED3D_DECL_USAGE_NORMAL && !usage_idx)
+        *regnum = WINED3D_FFP_NORMAL;
+    else if (usage == WINED3D_DECL_USAGE_PSIZE && !usage_idx)
+        *regnum = WINED3D_FFP_PSIZE;
+    else if (usage == WINED3D_DECL_USAGE_COLOR && !usage_idx)
+        *regnum = WINED3D_FFP_DIFFUSE;
+    else if (usage == WINED3D_DECL_USAGE_COLOR && usage_idx == 1)
+        *regnum = WINED3D_FFP_SPECULAR;
+    else if (usage == WINED3D_DECL_USAGE_TEXCOORD && usage_idx < WINED3DDP_MAXTEXCOORD)
+        *regnum = WINED3D_FFP_TEXCOORD0 + usage_idx;
+    else
+    {
+        FIXME("Unsupported input stream [usage=%s, usage_idx=%u].\n", debug_d3ddeclusage(usage), usage_idx);
+        *regnum = ~0U;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/* FIXME: Separate buffer loading from declaration decoding */
+/* Context activation is done by the caller. */
+void context_stream_info_from_declaration(struct wined3d_context *context,
+        const struct wined3d_state *state, struct wined3d_stream_info *stream_info)
+{
+    /* We need to deal with frequency data! */
+    struct wined3d_vertex_declaration *declaration = state->vertex_declaration;
+    BOOL use_vshader;
+    unsigned int i;
+    WORD map;
+
+    stream_info->use_map = 0;
+    stream_info->swizzle_map = 0;
+    stream_info->all_vbo = 1;
+
+    /* Check for transformed vertices, disable vertex shader if present. */
+    stream_info->position_transformed = declaration->position_transformed;
+    use_vshader = state->vertex_shader && !declaration->position_transformed;
+
+    /* Translate the declaration into strided data. */
+    for (i = 0; i < declaration->element_count; ++i)
+    {
+        const struct wined3d_vertex_declaration_element *element = &declaration->elements[i];
+        const struct wined3d_stream_state *stream = &state->streams[element->input_slot];
+        struct wined3d_buffer *buffer = stream->buffer;
+        struct wined3d_bo_address data;
+        BOOL stride_used;
+        unsigned int idx;
+        DWORD stride;
+
+        TRACE("%p Element %p (%u of %u).\n", declaration->elements,
+                element, i + 1, declaration->element_count);
+
+        if (!buffer) continue;
+
+        stride = stream->stride;
+        TRACE("Stream %u in buffer %p.\n", element->input_slot, buffer);
+        buffer_get_memory(buffer, context, &data);
+
+        /* Can't use vbo's if the base vertex index is negative. OpenGL doesn't accept negative offsets
+         * (or rather offsets bigger than the vbo, because the pointer is unsigned), so use system memory
+         * sources. In most sane cases the pointer - offset will still be > 0, otherwise it will wrap
+         * around to some big value. Hope that with the indices, the driver wraps it back internally. If
+         * not, drawStridedSlow is needed, including a vertex buffer path. */
+        if (state->load_base_vertex_index < 0)
+        {
+            WARN_(d3d_perf)("load_base_vertex_index is < 0 (%d), not using VBOs.\n",
+                    state->load_base_vertex_index);
+            data.buffer_object = 0;
+            data.addr = buffer_get_sysmem(buffer, context);
+            if ((UINT_PTR)data.addr < -state->load_base_vertex_index * stride)
+            {
+                FIXME("System memory vertex data load offset is negative!\n");
+            }
+        }
+        data.addr += element->offset;
+
+        TRACE("offset %u input_slot %u usage_idx %d.\n", element->offset, element->input_slot, element->usage_idx);
+
+        if (use_vshader)
+        {
+            if (element->output_slot == ~0U)
+            {
+                /* TODO: Assuming vertexdeclarations are usually used with the
+                 * same or a similar shader, it might be worth it to store the
+                 * last used output slot and try that one first. */
+                stride_used = vshader_get_input(state->vertex_shader,
+                        element->usage, element->usage_idx, &idx);
+            }
+            else
+            {
+                idx = element->output_slot;
+                stride_used = TRUE;
+            }
+        }
+        else
+        {
+            if (!element->ffp_valid)
+            {
+                WARN("Skipping unsupported fixed function element of format %s and usage %s.\n",
+                        debug_d3dformat(element->format->id), debug_d3ddeclusage(element->usage));
+                stride_used = FALSE;
+            }
+            else
+            {
+                stride_used = fixed_get_input(element->usage, element->usage_idx, &idx);
+            }
+        }
+
+        if (stride_used)
+        {
+            TRACE("Load %s array %u [usage %s, usage_idx %u, "
+                    "input_slot %u, offset %u, stride %u, format %s, buffer_object %u].\n",
+                    use_vshader ? "shader": "fixed function", idx,
+                    debug_d3ddeclusage(element->usage), element->usage_idx, element->input_slot,
+                    element->offset, stride, debug_d3dformat(element->format->id), data.buffer_object);
+
+            data.addr += stream->offset;
+
+            stream_info->elements[idx].format = element->format;
+            stream_info->elements[idx].data = data;
+            stream_info->elements[idx].stride = stride;
+            stream_info->elements[idx].stream_idx = element->input_slot;
+
+            if (!context->gl_info->supported[ARB_VERTEX_ARRAY_BGRA]
+                    && element->format->id == WINED3DFMT_B8G8R8A8_UNORM)
+            {
+                stream_info->swizzle_map |= 1 << idx;
+            }
+            stream_info->use_map |= 1 << idx;
+        }
+    }
+
+    /* Preload the vertex buffers. */
+    context->num_buffer_queries = 0;
+    for (i = 0, map = stream_info->use_map; map; map >>= 1, ++i)
+    {
+        struct wined3d_stream_info_element *element;
+        struct wined3d_buffer *buffer;
+
+        if (!(map & 1))
+            continue;
+
+        element = &stream_info->elements[i];
+        buffer = state->streams[element->stream_idx].buffer;
+        buffer_internal_preload(buffer, context, state);
+
+        /* If the preload dropped the buffer object, update the stream info. */
+        if (buffer->buffer_object != element->data.buffer_object)
+        {
+            element->data.buffer_object = 0;
+            element->data.addr = buffer_get_sysmem(buffer, context)
+                    + (ptrdiff_t)element->data.addr;
+        }
+
+        if (!buffer->buffer_object)
+            stream_info->all_vbo = 0;
+
+        if (buffer->query)
+            context->buffer_queries[context->num_buffer_queries++] = buffer->query;
+    }
+}
+
+/* Context activation is done by the caller. */
+static void context_update_stream_info(struct wined3d_context *context, const struct wined3d_state *state)
+{
+    const struct wined3d_gl_info *gl_info = context->gl_info;
+    const struct wined3d_d3d_info *d3d_info = context->d3d_info;
+    struct wined3d_stream_info *stream_info = &context->stream_info;
+    DWORD prev_all_vbo = stream_info->all_vbo;
+
+    TRACE("============================= Vertex Declaration =============================\n");
+    context_stream_info_from_declaration(context, state, stream_info);
+
+    if (state->vertex_shader && !stream_info->position_transformed)
+    {
+        if (state->vertex_declaration->half_float_conv_needed && !stream_info->all_vbo)
+        {
+            TRACE("Using drawStridedSlow with vertex shaders for FLOAT16 conversion.\n");
+            context->use_immediate_mode_draw = TRUE;
+        }
+        else
+        {
+            context->use_immediate_mode_draw = FALSE;
+        }
+    }
+    else
+    {
+        WORD slow_mask = (1 << WINED3D_FFP_PSIZE);
+        slow_mask |= -!gl_info->supported[ARB_VERTEX_ARRAY_BGRA]
+                & ((1 << WINED3D_FFP_DIFFUSE) | (1 << WINED3D_FFP_SPECULAR));
+
+        if (((stream_info->position_transformed && !d3d_info->xyzrhw)
+                || (stream_info->use_map & slow_mask)) && !stream_info->all_vbo)
+            context->use_immediate_mode_draw = TRUE;
+        else
+            context->use_immediate_mode_draw = FALSE;
+    }
+
+    if (prev_all_vbo != stream_info->all_vbo)
+        context_invalidate_state(context, STATE_INDEXBUFFER);
+}
+
+/* Context activation is done by the caller. */
+static void context_preload_texture(struct wined3d_context *context,
+        const struct wined3d_state *state, unsigned int idx)
+{
+    struct wined3d_texture *texture;
+    enum WINED3DSRGB srgb;
+
+    if (!(texture = state->textures[idx]))
+        return;
+
+    srgb = state->sampler_states[idx][WINED3D_SAMP_SRGB_TEXTURE] ? SRGB_SRGB : SRGB_RGB;
+    texture->texture_ops->texture_preload(texture, context, srgb);
+}
+
+/* Context activation is done by the caller. */
+static void context_preload_textures(struct wined3d_context *context, const struct wined3d_state *state)
+{
+    unsigned int i;
+
+    if (use_vs(state))
+    {
+        for (i = 0; i < MAX_VERTEX_SAMPLERS; ++i)
+        {
+            if (state->vertex_shader->reg_maps.sampler_type[i])
+                context_preload_texture(context, state, MAX_FRAGMENT_SAMPLERS + i);
+        }
+    }
+
+    if (use_ps(state))
+    {
+        for (i = 0; i < MAX_FRAGMENT_SAMPLERS; ++i)
+        {
+            if (state->pixel_shader->reg_maps.sampler_type[i])
+                context_preload_texture(context, state, i);
+        }
+    }
+    else
+    {
+        WORD ffu_map = context->fixed_function_usage_map;
+
+        for (i = 0; ffu_map; ffu_map >>= 1, ++i)
+        {
+            if (ffu_map & 1)
+                context_preload_texture(context, state, i);
+        }
     }
 }
 
@@ -2365,16 +2854,16 @@ BOOL context_apply_draw_state(struct wined3d_context *context, struct wined3d_de
     /* Preload resources before FBO setup. Texture preload in particular may
      * result in changes to the current FBO, due to using e.g. FBO blits for
      * updating a resource location. */
-    device_update_tex_unit_map(device);
-    device_preload_textures(device);
+    context_update_tex_unit_map(context, state);
+    context_preload_textures(context, state);
     if (isStateDirty(context, STATE_VDECL) || isStateDirty(context, STATE_STREAMSRC))
-        device_update_stream_info(device, context->gl_info);
+        context_update_stream_info(context, state);
     if (state->index_buffer)
     {
-        if (device->stream_info.all_vbo)
-            wined3d_buffer_preload(state->index_buffer);
+        if (context->stream_info.all_vbo)
+            buffer_internal_preload(state->index_buffer, context, state);
         else
-            buffer_get_sysmem(state->index_buffer, context->gl_info);
+            buffer_get_sysmem(state->index_buffer, context);
     }
 
     for (i = 0; i < context->numDirtyEntries; ++i)
@@ -2451,9 +2940,9 @@ static void context_setup_target(struct wined3d_context *context, struct wined3d
         {
             /* Read the back buffer of the old drawable into the destination texture. */
             if (context->current_rt->texture_name_srgb)
-                surface_internal_preload(context->current_rt, SRGB_SRGB);
-            surface_internal_preload(context->current_rt, SRGB_RGB);
-            surface_modify_location(context->current_rt, SFLAG_INDRAWABLE, FALSE);
+                surface_internal_preload(context->current_rt, context, SRGB_SRGB);
+            surface_internal_preload(context->current_rt, context, SRGB_RGB);
+            surface_invalidate_location(context->current_rt, SFLAG_INDRAWABLE);
         }
     }
 
