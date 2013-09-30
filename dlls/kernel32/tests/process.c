@@ -266,9 +266,16 @@ static void     doChild(const char* file, const char* option)
     WCHAR               *ptrW, *ptrW_save;
     char                bufA[MAX_PATH];
     WCHAR               bufW[MAX_PATH];
-    HANDLE              hFile = CreateFileA(file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, 0);
+    HANDLE              hFile;
     BOOL ret;
 
+    if (option && strcmp(option, "wait") == 0) {
+        /* for job object tests */
+        Sleep(30000);
+        return;
+    }
+
+    hFile = CreateFileA(file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, 0);
     if (hFile == INVALID_HANDLE_VALUE) return;
 
     /* output of startup info (Ansi) */
@@ -2071,7 +2078,7 @@ static void test_DuplicateHandle(void)
     CloseHandle(out);
 }
 
-static void test_completion_response(HANDLE IOPort, DWORD eKey, ULONG_PTR eVal, LPOVERLAPPED eOverlap)
+static void test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD eOverlap)
 {
     DWORD CompletionKey, ret;
     ULONG_PTR CompletionValue;
@@ -2079,11 +2086,13 @@ static void test_completion_response(HANDLE IOPort, DWORD eKey, ULONG_PTR eVal, 
 
     ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, 0);
     ok(ret, "GetQueuedCompletionStatus: %x\n", GetLastError());
-    if(ret)
-        ok(eKey == CompletionKey &&
-            eVal == CompletionValue &&
-            eOverlap == Overlapped,
-        "Unexpected completion event: %x, %p, %p\n", CompletionKey, (void*)CompletionValue, (void*)Overlapped);
+    if(ret) {
+        todo_wine ok(eKey == CompletionKey &&
+                    (ULONG_PTR)eVal == CompletionValue &&
+                    eOverlap == (DWORD_PTR)Overlapped,
+                    "Unexpected completion event: %x, %p, %p\n",
+                    CompletionKey, (void*)CompletionValue, (void*)Overlapped);
+    }
 }
 
 static void test_JobObject(void) {
@@ -2094,14 +2103,14 @@ static void test_JobObject(void) {
     HANDLE IOPort;
     BOOL ret;
     BOOL out;
-    char cmdline[MAX_PATH];
+    char buffer[MAX_PATH];
 
     if(!pCreateJobObjectW) {
         win_skip("No job object support\n");
         return;
     }
 
-    sprintf(cmdline, "%s %s %s", myARGV[0], myARGV[1], "wait");
+    sprintf(buffer, "\"%s\" tests/process.c ignored \"%s\"", selfname, "wait");
 
     IOPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
     ok(IOPort != INVALID_HANDLE_VALUE, "CreateIoCompletionPort (%d)", GetLastError());
@@ -2114,9 +2123,9 @@ static void test_JobObject(void) {
     ret = pSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
-    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
         "CreateProcess (%d)\n", GetLastError());
-    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
         "CreateProcess (%d)\n", GetLastError());
 
     if(pIsProcessInJob) {
@@ -2134,7 +2143,7 @@ static void test_JobObject(void) {
 
     ret = pAssignProcessToJobObject(JobObject, pi[1].hProcess);
     ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
- 
+
     ok(TerminateProcess(pi[0].hProcess, 0), "TerminateProcess (%d)\n", GetLastError());
     winetest_wait_child_process(pi[0].hProcess);
     ok(TerminateProcess(pi[1].hProcess, 0), "TerminateProcess (%d)\n", GetLastError());
@@ -2145,9 +2154,9 @@ static void test_JobObject(void) {
         todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
     }
 
-    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
         "CreateProcess: (%d)\n", GetLastError());
-    ok(CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si[3], &pi[3]),
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[3], &pi[3]),
         "CreateProcess: (%d)\n", GetLastError());
 
     ret = pAssignProcessToJobObject(JobObject, pi[2].hProcess);
@@ -2159,14 +2168,14 @@ static void test_JobObject(void) {
     ret = pTerminateJobObject( JobObject, 5 );
     ok(ret, "TerminateJobObject (%d)\n", GetLastError());
 
-    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[0].dwProcessId);
-    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[1].dwProcessId);
-    test_completion_response(IOPort, 0x7, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[0].dwProcessId);
-    test_completion_response(IOPort, 0x7, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[1].dwProcessId);
-    test_completion_response(IOPort, 0x4, (ULONG_PTR)JobObject, 0);
-    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[2].dwProcessId);
-    test_completion_response(IOPort, 0x6, (ULONG_PTR)JobObject, (LPOVERLAPPED)pi[3].dwProcessId);
-    test_completion_response(IOPort, 0x4, (ULONG_PTR)JobObject, 0);
+    test_job_completion(IOPort, 0x6, JobObject, pi[0].dwProcessId);
+    test_job_completion(IOPort, 0x6, JobObject, pi[1].dwProcessId);
+    test_job_completion(IOPort, 0x7, JobObject, pi[0].dwProcessId);
+    test_job_completion(IOPort, 0x7, JobObject, pi[1].dwProcessId);
+    test_job_completion(IOPort, 0x4, JobObject, 0);
+    test_job_completion(IOPort, 0x6, JobObject, pi[2].dwProcessId);
+    test_job_completion(IOPort, 0x6, JobObject, pi[3].dwProcessId);
+    test_job_completion(IOPort, 0x4, JobObject, 0);
 
     /* in case TerminateJobObject is not implemented */
     TerminateProcess(pi[2].hProcess, 0);
@@ -2181,10 +2190,7 @@ START_TEST(process)
 
     if (myARGC >= 3)
     {
-        if(strcmp(myARGV[2], "wait") == 0)
-            Sleep(30000);
-        else
-            doChild(myARGV[2], (myARGC == 3) ? NULL : myARGV[3]);
+        doChild(myARGV[2], (myARGC == 3) ? NULL : myARGV[3]);
         return;
     }
     test_TerminateProcess();
