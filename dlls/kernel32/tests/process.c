@@ -2095,6 +2095,8 @@ static void test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD eO
                     "Unexpected completion event: %x, %p, %p\n",
                     CompletionKey, (void*)CompletionValue, (void*)Overlapped);
     }
+    printf("completion event: %x, %p, %p\n", CompletionKey, CompletionValue, Overlapped);
+    printf("expected   event: %x, %p, %p\n", eKey, eVal, eOverlap);
 }
 
 static void test_JobObject(void) {
@@ -2168,12 +2170,6 @@ static void test_JobObject(void) {
 
     winetest_wait_child_process(pi[2].hProcess);
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0);
-
     thisProcess = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE,
                               FALSE, GetCurrentProcessId());
 
@@ -2187,11 +2183,36 @@ static void test_JobObject(void) {
 
     winetest_wait_child_process(pi[3].hProcess);
 
+Expected:
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[2].dwProcessId);
     test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, GetCurrentProcessId());
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[3].dwProcessId);
     test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[3].dwProcessId);
+
+    return;
+    
+Actual:
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[2].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, GetCurrentProcessId()); // <<<
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[3].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[3].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0); // <<<
+
+/* When the completion tests are split (as they are in the other branch
+ * then the JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO is correctly queued after
+ * EXIT_PROCESS from process 2 */
+
 }
 
 START_TEST(process)
@@ -2205,24 +2226,6 @@ START_TEST(process)
         doChild(myARGV[2], (myARGC == 3) ? NULL : myARGV[3]);
         return;
     }
-    test_TerminateProcess();
-    test_Startup();
-    test_CommandLine();
-    test_Directory();
-    test_Environment();
-    test_SuspendFlag();
-    test_DebuggingFlag();
-    test_Console();
-    test_ExitCode();
-    test_OpenProcess();
-    test_GetProcessVersion();
-    test_GetProcessImageFileNameA();
-    test_QueryFullProcessImageNameA();
-    test_QueryFullProcessImageNameW();
-    test_Handles();
-    test_SystemInfo();
-    test_RegistryQuota();
-    test_DuplicateHandle();
     test_JobObject();
     /* things that can be tested:
      *  lookup:         check the way program to be executed is searched
