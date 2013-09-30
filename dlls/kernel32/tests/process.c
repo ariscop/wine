@@ -271,9 +271,11 @@ static void     doChild(const char* file, const char* option)
 
     if (option && strcmp(option, "wait") == 0) {
         /* for job object tests */
-        Sleep(30000);
+        Sleep(5000);
         return;
     }
+    if (option && strcmp(option, "exit") == 0)
+        return;
 
     hFile = CreateFileA(file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, 0);
     if (hFile == INVALID_HANDLE_VALUE) return;
@@ -2101,6 +2103,7 @@ static void test_JobObject(void) {
     STARTUPINFO si[4] = {{0}};
     HANDLE JobObject;
     HANDLE IOPort;
+    HANDLE thisProcess;
     BOOL ret;
     BOOL out;
     char buffer[MAX_PATH];
@@ -2156,30 +2159,39 @@ static void test_JobObject(void) {
 
     ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
         "CreateProcess: (%d)\n", GetLastError());
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[3], &pi[3]),
-        "CreateProcess: (%d)\n", GetLastError());
 
     ret = pAssignProcessToJobObject(JobObject, pi[2].hProcess);
     ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
 
-    ret = pAssignProcessToJobObject(JobObject, pi[3].hProcess);
-    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
-
-    ret = pTerminateJobObject( JobObject, 5 );
+    ret = pTerminateJobObject( JobObject, 0 );
     ok(ret, "TerminateJobObject (%d)\n", GetLastError());
 
-    test_job_completion(IOPort, 0x6, JobObject, pi[0].dwProcessId);
-    test_job_completion(IOPort, 0x6, JobObject, pi[1].dwProcessId);
-    test_job_completion(IOPort, 0x7, JobObject, pi[0].dwProcessId);
-    test_job_completion(IOPort, 0x7, JobObject, pi[1].dwProcessId);
-    test_job_completion(IOPort, 0x4, JobObject, 0);
-    test_job_completion(IOPort, 0x6, JobObject, pi[2].dwProcessId);
-    test_job_completion(IOPort, 0x6, JobObject, pi[3].dwProcessId);
-    test_job_completion(IOPort, 0x4, JobObject, 0);
+    winetest_wait_child_process(pi[2].hProcess);
 
-    /* in case TerminateJobObject is not implemented */
-    TerminateProcess(pi[2].hProcess, 0);
-    TerminateProcess(pi[3].hProcess, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0);
+
+    thisProcess = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE,
+                              FALSE, GetCurrentProcessId());
+
+    ret = pAssignProcessToJobObject(JobObject, thisProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    sprintf(buffer, "\"%s\" tests/process.c ignored \"%s\"", selfname, "exit");
+
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[3], &pi[3]),
+        "CreateProcess: (%d)\n", GetLastError());
+
+    winetest_wait_child_process(pi[3].hProcess);
+
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[2].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, GetCurrentProcessId());
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[3].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[3].dwProcessId);
 }
 
 START_TEST(process)

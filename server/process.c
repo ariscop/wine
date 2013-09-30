@@ -206,10 +206,6 @@ static unsigned int job_map_access( struct object *obj, unsigned int access )
     return access & ~(GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL);
 }
 
-#define JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO 4
-#define JOB_OBJECT_MSG_NEW_PROCESS 6
-#define JOB_OBJECT_MSG_EXIT_PROCESS 7
-
 static void job_add_process( struct job *job, struct process *process )
 {
     process->job = (struct job*)grab_object(job);
