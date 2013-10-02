@@ -149,6 +149,7 @@ struct job
     struct list processes;
     apc_param_t completion_key;
     struct completion *completion;
+    int num_active;
 };
 
 static const struct object_ops job_ops =
@@ -177,6 +178,7 @@ static struct job *create_job_object(void)
 
     job->completion_key = 0;
     job->completion = NULL;
+    job->num_active = 0;
 
     list_init(&job->processes);
 
@@ -210,6 +212,8 @@ static void job_add_process( struct job *job, struct process *process )
 {
     process->job = (struct job*)grab_object(job);
 
+    job->num_active++;
+
     if(job->completion)
         add_completion(
             job->completion,
@@ -229,8 +233,8 @@ static void job_remove_process( struct process *process )
         return;
 
     assert(job->obj.ops == &job_ops);
-
-    list_remove(&process->job_entry);
+    assert(job->num_active > 0);
+    job->num_active--;
 
     if(job->completion) {
         add_completion(
@@ -241,7 +245,7 @@ static void job_remove_process( struct process *process )
             JOB_OBJECT_MSG_EXIT_PROCESS
         );
 
-        if(list_count(&job->processes) == 0) {
+        if(job->num_active == 0) {
             add_completion(
                 job->completion,
                 job->completion_key,
@@ -567,7 +571,10 @@ static void process_destroy( struct object *obj )
     close_process_handles( process );
     set_process_startup_state( process, STARTUP_ABORTED );
 
-    if (process->job) release_object( process->job );
+    if (process->job) {
+        list_remove(&process->job_entry);
+        release_object( process->job );
+    }
     if (process->console) release_object( process->console );
     if (process->parent) release_object( process->parent );
     if (process->msg_fd) release_object( process->msg_fd );
@@ -727,7 +734,6 @@ restart:
         kill_thread( thread, 1 );
         goto restart;
     }
-    job_remove_process( process );
     release_object( process );
 }
 
@@ -805,6 +811,7 @@ static void process_killed( struct process *process )
     remove_process_locks( process );
     set_process_startup_state( process, STARTUP_ABORTED );
     finish_process_tracing( process );
+    job_remove_process( process );
     start_sigkill_timer( process );
     wake_up( &process->obj, 0 );
 }

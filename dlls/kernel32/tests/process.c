@@ -2089,11 +2089,11 @@ static void test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD eO
     ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, 0);
     ok(ret, "GetQueuedCompletionStatus: %x\n", GetLastError());
     if(ret) {
-        todo_wine ok(eKey == CompletionKey &&
-                    (ULONG_PTR)eVal == CompletionValue &&
-                    eOverlap == (DWORD_PTR)Overlapped,
-                    "Unexpected completion event: %x, %p, %p\n",
-                    CompletionKey, (void*)CompletionValue, (void*)Overlapped);
+        ok(eKey == CompletionKey &&
+            (ULONG_PTR)eVal == CompletionValue &&
+            eOverlap == (DWORD_PTR)Overlapped,
+            "Unexpected completion event: %x, %p, %p\n",
+            CompletionKey, (void*)CompletionValue, (void*)Overlapped);
     }
 }
 
@@ -2154,7 +2154,7 @@ static void test_JobObject(void) {
 
     if(pIsProcessInJob) {
         ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-        todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+        ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
     }
 
     ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
