@@ -201,12 +201,10 @@ static struct object_type *job_get_type( struct object *obj )
 
 static unsigned int job_map_access( struct object *obj, unsigned int access )
 {
-    /* TODO: Check permissions */
-    /* if (access & GENERIC_READ)    access |= STANDARD_RIGHTS_READ;
-       if (access & GENERIC_WRITE)   access |= STANDARD_RIGHTS_WRITE;
-       if (access & GENERIC_EXECUTE) access |= STANDARD_RIGHTS_EXECUTE;
-       if (access & GENERIC_ALL)     access |= JOB_OBJECT_ALL_ACCESS; */
-    access |= JOB_OBJECT_ALL_ACCESS;
+    if (access & GENERIC_READ)    access |= STANDARD_RIGHTS_READ;
+    if (access & GENERIC_WRITE)   access |= STANDARD_RIGHTS_WRITE;
+    if (access & GENERIC_EXECUTE) access |= STANDARD_RIGHTS_EXECUTE;
+    if (access & GENERIC_ALL)     access |= JOB_OBJECT_ALL_ACCESS;
     return access & ~(GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL);
 }
 
