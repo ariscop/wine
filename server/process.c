@@ -137,7 +137,7 @@ static const struct object_ops startup_info_ops =
 
 static void job_dump_info( struct object *obj, int verbose );
 static unsigned int job_map_access( struct object *obj, unsigned int access );
-static int job_signaled( struct object *obj, struct thread *thread );
+static int job_signaled( struct object *obj, struct wait_queue_entry *entry );
 static void job_destroy( struct object *obj );
 static struct object_type *job_get_type( struct object *obj );
 static struct job *get_job_from_handle( struct process *process, obj_handle_t handle, unsigned int access );
@@ -150,6 +150,7 @@ struct job
     apc_param_t completion_key;
     struct completion *completion;
     int num_active;
+    int terminating;
 };
 
 static const struct object_ops job_ops =
@@ -179,6 +180,7 @@ static struct job *create_job_object(void)
     job->completion_key = 0;
     job->completion = NULL;
     job->num_active = 0;
+    job->terminating = 0;
 
     list_init(&job->processes);
 
@@ -237,13 +239,15 @@ static void job_remove_process( struct process *process )
     job->num_active--;
 
     if(job->completion) {
-        add_completion(
-            job->completion,
-            job->completion_key,
-            get_process_id( process ),
-            1, /* TODO: why is this 1s */
-            JOB_OBJECT_MSG_EXIT_PROCESS
-        );
+        if(!job->terminating) {
+            add_completion(
+                job->completion,
+                job->completion_key,
+                get_process_id( process ),
+                1, /* TODO: why is this 1s */
+                JOB_OBJECT_MSG_EXIT_PROCESS
+            );
+        }
 
         if(job->num_active == 0) {
             add_completion(
@@ -253,6 +257,7 @@ static void job_remove_process( struct process *process )
                 1,
                 JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
             );
+            job->terminating = 0;
         }
     }
 }
@@ -274,7 +279,7 @@ static void job_dump_info( struct object *obj, int verbose )
     fprintf( stderr, "Job processes=%d\n", list_count(&job->processes) );
 }
 
-static int job_signaled( struct object *obj, struct thread *thread )
+static int job_signaled( struct object *obj, struct wait_queue_entry *entry )
 {
     /* TODO: job object should become signaled after a timeout */
     return 0;
@@ -1504,28 +1509,15 @@ DECL_HANDLER(terminate_job)
 {
     struct job *job;
     struct process *process;
-    struct completion *completion;
 
     if(!(job = get_job_from_handle( current->process, req->handle, JOB_OBJECT_TERMINATE )))
         return;
 
-    completion = job->completion;
-    job->completion = NULL;
+    job->terminating = 1;
 
     LIST_FOR_EACH_ENTRY(process, &job->processes, struct process, job_entry )
     {
         terminate_process(process, NULL, req->status);
-    }
-
-    job->completion = completion;
-    if(job->completion)
-    {
-        add_completion(
-            job->completion,
-            job->completion_key,
-            0, 1,
-            JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
-        );
     }
 
     release_object(job);
