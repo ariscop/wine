@@ -1485,7 +1485,7 @@ DECL_HANDLER(process_in_job)
     if(!(job = get_job_from_handle( current->process, req->job_handle, JOB_OBJECT_ASSIGN_PROCESS )))
         return;
 
-    if(!(process = get_process_from_handle( req->process_handle, PROCESS_SET_QUOTA|PROCESS_TERMINATE )))
+    if(!(process = get_process_from_handle( req->process_handle, PROCESS_QUERY_INFORMATION )))
         goto error;
 
     set_error(STATUS_PROCESS_NOT_IN_JOB);
