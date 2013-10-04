@@ -1526,16 +1526,15 @@ DECL_HANDLER(job_set_completion)
     struct job *job;
     struct completion *completion;
 
-    if(!(job = get_job_from_handle( current->process, req->handle, JOB_OBJECT_ASSIGN_PROCESS )))
+    if(!(job = get_job_from_handle( current->process, req->handle, JOB_OBJECT_SET_ATTRIBUTES )))
         return;
 
-    if(!(completion = get_completion_obj( current->process, req->CompletionPort, JOB_OBJECT_SET_ATTRIBUTES ))) {
-        release_object(job);
-        return;
-    }
+    if(!(completion = get_completion_obj( current->process, req->CompletionPort, 0 ))) {
+        goto error;
 
     job->completion_key = req->CompletionKey;
     job->completion = completion;
 
+error:
     release_object(job);
 }
