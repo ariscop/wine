@@ -271,7 +271,7 @@ static void     doChild(const char* file, const char* option)
 
     if (option && strcmp(option, "wait") == 0) {
         /* for job object tests */
-        Sleep(5000);
+        Sleep(3000);
         return;
     }
     if (option && strcmp(option, "exit") == 0)
@@ -2117,10 +2117,10 @@ static void test_JobObject(void) {
     sprintf(buffer, "\"%s\" tests/process.c ignored \"%s\"", selfname, "wait");
 
     IOPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
-    ok(IOPort != INVALID_HANDLE_VALUE, "CreateIoCompletionPort (%d)", GetLastError());
+    ok(IOPort, "CreateIoCompletionPort (%d)", GetLastError());
 
     JobObject = pCreateJobObjectW(NULL, NULL);
-    ok(JobObject != INVALID_HANDLE_VALUE, "CreateJobObject (%d)\n", GetLastError());
+    ok(JobObject, "CreateJobObject (%d)\n", GetLastError());
 
     Port.CompletionKey = JobObject;
     Port.CompletionPort = IOPort;
