@@ -2117,10 +2117,10 @@ static void test_JobObject(void) {
     sprintf(buffer, "\"%s\" tests/process.c ignored \"%s\"", selfname, "wait");
 
     IOPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
-    ok(IOPort, "CreateIoCompletionPort (%d)", GetLastError());
+    ok(IOPort != NULL, "CreateIoCompletionPort (%d)", GetLastError());
 
     JobObject = pCreateJobObjectW(NULL, NULL);
-    ok(JobObject, "CreateJobObject (%d)\n", GetLastError());
+    ok(JobObject != NULL, "CreateJobObject (%d)\n", GetLastError());
 
     Port.CompletionKey = JobObject;
     Port.CompletionPort = IOPort;
