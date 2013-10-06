@@ -2099,6 +2099,7 @@ static void test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD eO
 
 static void test_JobObject(void) {
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION info;
     PROCESS_INFORMATION pi[4];
     STARTUPINFO si[4] = {{0}};
     HANDLE JobObject;
@@ -2192,6 +2193,37 @@ static void test_JobObject(void) {
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, GetCurrentProcessId());
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[3].dwProcessId);
     test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[3].dwProcessId);
+
+    ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
+        "CreateProcess expected failure\n");
+
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &info, sizeof(info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
+        "CreateProcess: (%d)\n", GetLastError());
+    winetest_wait_child_process(pi[0].hProcess);
+
+    if(pIsProcessInJob) {
+        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
+        todo_wine ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
+    }
+
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &info, sizeof(info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
+        "CreateProcess: (%d)\n", GetLastError());
+    winetest_wait_child_process(pi[0].hProcess);
+
+    if(pIsProcessInJob) {
+        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
+        todo_wine ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
+    }
 }
 
 START_TEST(process)

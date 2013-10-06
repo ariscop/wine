@@ -5407,6 +5407,43 @@ typedef struct _JOBOBJECT_ASSOCIATE_COMPLETION_PORT {
 #define JOB_OBJECT_MSG_PROCESS_MEMORY_LIMIT         9
 #define JOB_OBJECT_MSG_JOB_MEMORY_LIMIT             10
 
+typedef struct _JOBOBJECT_BASIC_LIMIT_INFORMATION {
+    LARGE_INTEGER PerProcessUserTimeLimit;
+    LARGE_INTEGER PerJobUserTimeLimit;
+    DWORD         LimitFlags;
+    SIZE_T        MinimumWorkingSetSize;
+    SIZE_T        MaximumWorkingSetSize;
+    DWORD         ActiveProcessLimit;
+    ULONG_PTR     Affinity;
+    DWORD         PriorityClass;
+    DWORD         SchedulingClass;
+} JOBOBJECT_BASIC_LIMIT_INFORMATION, *PJOBOBJECT_BASIC_LIMIT_INFORMATION;
+
+typedef struct _JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+    JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+    IO_COUNTERS                       IoInfo;
+    SIZE_T                            ProcessMemoryLimit;
+    SIZE_T                            JobMemoryLimit;
+    SIZE_T                            PeakProcessMemoryUsed;
+    SIZE_T                            PeakJobMemoryUsed;
+} JOBOBJECT_EXTENDED_LIMIT_INFORMATION, *PJOBOBJECT_EXTENDED_LIMIT_INFORMATION;
+
+#define JOB_OBJECT_LIMIT_WORKINGSET                 0x00000001
+#define JOB_OBJECT_LIMIT_PROCESS_TIME               0x00000002
+#define JOB_OBJECT_LIMIT_JOB_TIME                   0x00000004
+#define JOB_OBJECT_LIMIT_ACTIVE_PROCESS             0x00000008
+#define JOB_OBJECT_LIMIT_AFFINITY                   0x00000010
+#define JOB_OBJECT_LIMIT_PRIORITY_CLASS             0x00000020
+#define JOB_OBJECT_LIMIT_PRESERVE_JOB_TIME          0x00000040
+#define JOB_OBJECT_LIMIT_SCHEDULING_CLASS           0x00000080
+#define JOB_OBJECT_LIMIT_PROCESS_MEMORY             0x00000100
+#define JOB_OBJECT_LIMIT_JOB_MEMORY                 0x00000200
+#define JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION 0x00000400
+#define JOB_OBJECT_LIMIT_BREAKAWAY_OK               0x00000800
+#define JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK        0x00001000
+#define JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE          0x00002000
+#define JOB_OBJECT_LIMIT_SUBSET_AFFINITY            0x00004000
+
 typedef enum _LOGICAL_PROCESSOR_RELATIONSHIP
 {
     RelationProcessorCore    = 0,
