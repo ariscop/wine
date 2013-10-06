@@ -1529,7 +1529,7 @@ DECL_HANDLER(job_set_completion)
     if(!(job = get_job_from_handle( current->process, req->handle, JOB_OBJECT_SET_ATTRIBUTES )))
         return;
 
-    if(!(completion = get_completion_obj( current->process, req->CompletionPort, 0 ))) {
+    if(!(completion = get_completion_obj( current->process, req->CompletionPort, 0 )))
         goto error;
 
     job->completion_key = req->CompletionKey;
