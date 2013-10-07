@@ -11,7 +11,6 @@ C_SRCS = \
 	file.c \
 	generated.c \
 	info.c \
-	job.c \
 	large_int.c \
 	om.c \
 	path.c \
