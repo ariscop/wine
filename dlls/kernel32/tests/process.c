@@ -2194,7 +2194,7 @@ static void test_JobObject(void) {
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[3].dwProcessId);
     test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[3].dwProcessId);
 
-    ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
+    todo_wine ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
         "CreateProcess expected failure\n");
 
     info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
