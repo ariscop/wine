@@ -540,19 +540,36 @@ NTSTATUS WINAPI NtQueryMutant(IN HANDLE handle,
  */
 NTSTATUS WINAPI NtCreateJobObject( PHANDLE handle, ACCESS_MASK access, const OBJECT_ATTRIBUTES *attr )
 {
-    NTSTATUS status;
+    DWORD len = attr && attr->ObjectName ? attr->ObjectName->Length : 0;
+    NTSTATUS ret;
+    struct security_descriptor *sd = NULL;
+    struct object_attributes objattr;
 
-    FIXME( "(%p, %x, %s): Partial stub\n", handle, access, attr ? debugstr_us(attr->ObjectName) : "NULL" );
+    if (len >= MAX_PATH * sizeof(WCHAR)) return STATUS_NAME_TOO_LONG;
+
+    objattr.rootdir = wine_server_obj_handle( attr ? attr->RootDirectory : 0 );
+    objattr.sd_len = 0;
+    objattr.name_len = len;
+    if (attr)
+    {
+        ret = NTDLL_create_struct_sd( attr->SecurityDescriptor, &sd, &objattr.sd_len );
+        if (ret != STATUS_SUCCESS) return ret;
+    }
 
     SERVER_START_REQ( create_job )
     {
-        status = wine_server_call( req );
-        if(status == STATUS_SUCCESS)
-            *handle = wine_server_ptr_handle(reply->handle);
+        req->access = access;
+        req->attributes = attr ? attr->Attributes : 0;
+        wine_server_add_data( req, &objattr, sizeof(objattr) );
+        if (objattr.sd_len) wine_server_add_data( req, sd, objattr.sd_len );
+        if (len) wine_server_add_data( req, attr->ObjectName->Buffer, len );
+        ret = wine_server_call( req );
+        *handle = wine_server_ptr_handle( reply->handle );
     }
     SERVER_END_REQ;
 
-    return status;
+    NTDLL_free_struct_sd( sd );
+    return ret;
 }
 
 /******************************************************************************
@@ -608,8 +625,9 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
 
     TRACE( "(%p, %u, %p, %u)\n", handle, class, info, len );
 
-    if(class == JobObjectAssociateCompletionPortInformation)
+    switch(class)
     {
+    case JobObjectAssociateCompletionPortInformation:
         if(len != sizeof(JOBOBJECT_ASSOCIATE_COMPLETION_PORT))
             return STATUS_INVALID_PARAMETER;
 
@@ -623,9 +641,20 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
             status = wine_server_call(req);
         }
         SERVER_END_REQ;
-    }
-    else
-    {
+        break;
+    case JobObjectBasicAccountingInformation:
+    case JobObjectBasicLimitInformation:
+    case JobObjectBasicProcessIdList:
+    case JobObjectBasicUIRestrictions:
+    case JobObjectSecurityLimitInformation:
+    case JobObjectEndOfJobTimeInformation:
+    case JobObjectBasicAndIoAccountingInformation:
+    case JobObjectExtendedLimitInformation:
+    case JobObjectJobSetInformation:
+    case MaxJobObjectInfoClass:
+        status = STATUS_SUCCESS;
+        break;
+    default:
         status = STATUS_INVALID_INFO_CLASS;
     }
 
