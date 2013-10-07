@@ -210,6 +210,11 @@ static unsigned int job_map_access( struct object *obj, unsigned int access )
 
 static void job_add_process( struct job *job, struct process *process )
 {
+    if(process->job) {
+        set_error(ERROR_ACCESS_DENIED);
+        return;
+    }
+
     process->job = (struct job*)grab_object(job);
 
     job->num_active++;
@@ -219,7 +224,7 @@ static void job_add_process( struct job *job, struct process *process )
             job->completion,
             job->completion_key,
             get_process_id( process ),
-            1, /* TODO: why is this 1s */
+            STATUS_SUCCESS,
             JOB_OBJECT_MSG_NEW_PROCESS);
 
     list_add_tail(&job->processes, &process->job_entry);
@@ -242,7 +247,7 @@ static void job_remove_process( struct process *process )
                 job->completion,
                 job->completion_key,
                 get_process_id( process ),
-                1, /* TODO: why is this 1s */
+                STATUS_SUCCESS,
                 JOB_OBJECT_MSG_EXIT_PROCESS
             );
         }
@@ -252,7 +257,7 @@ static void job_remove_process( struct process *process )
                 job->completion,
                 job->completion_key,
                 0,
-                1,
+                STATUS_SUCCESS,
                 JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
             );
             job->terminating = 0;
@@ -279,7 +284,6 @@ static void job_dump_info( struct object *obj, int verbose )
 
 static int job_signaled( struct object *obj, struct wait_queue_entry *entry )
 {
-    /* TODO: job object should become signaled after a timeout */
     return 0;
 }
 
@@ -1452,7 +1456,7 @@ DECL_HANDLER(create_job)
     job = create_job_object();
 
     if(job) {
-        reply->handle = alloc_handle( current->process, (struct object*)job, 0, 0);
+        reply->handle = alloc_handle( current->process, (struct object*)job, JOB_OBJECT_ALL_ACCESS, 0);
         release_object(job);
     } else {
         reply->handle = 0;
