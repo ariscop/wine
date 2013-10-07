@@ -1122,6 +1122,9 @@ static void dump_new_process_reply( const struct new_process_reply *req )
 
 static void dump_create_job_request( const struct create_job_request *req )
 {
+    fprintf( stderr, " access=%08x", req->access );
+    fprintf( stderr, ", attributes=%08x", req->attributes );
+    dump_varargs_object_attributes( ", objattr=", cur_size );
 }
 
 static void dump_create_job_reply( const struct create_job_reply *req )

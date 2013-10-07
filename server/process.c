@@ -141,8 +141,8 @@ static int job_signaled( struct object *obj, struct wait_queue_entry *entry );
 static void job_destroy( struct object *obj );
 static struct object_type *job_get_type( struct object *obj );
 static struct job *get_job_from_handle( struct process *process, obj_handle_t handle, unsigned int access );
-static struct job *create_job_object(void);
-
+static struct job *create_job_object( struct directory *root, const struct unicode_str *name,
+                                      unsigned int attr, const struct security_descriptor *sd );
 struct job
 {
     struct object obj;             /* object header */
@@ -173,17 +173,28 @@ static const struct object_ops job_ops =
     job_destroy                    /* destroy */
 };
 
-static struct job *create_job_object(void)
+static struct job *create_job_object( struct directory *root, const struct unicode_str *name,
+                                      unsigned int attr, const struct security_descriptor *sd )
 {
-    struct job *job = (struct job*)alloc_object( &job_ops );
+    struct job *job;
 
-    job->completion_key = 0;
-    job->completion = NULL;
-    job->num_active = 0;
-    job->terminating = 0;
+    if ((job = create_named_object_dir( root, name, attr, &job_ops )))
+    {
+        if (get_error() != STATUS_OBJECT_NAME_EXISTS)
+        {
+            /* initialize it if it didn't already exist */
+            if (sd) default_set_sd( &job->obj, sd, OWNER_SECURITY_INFORMATION|
+                                                   GROUP_SECURITY_INFORMATION|
+                                                   DACL_SECURITY_INFORMATION|
+                                                   SACL_SECURITY_INFORMATION );
+            job->completion_key = 0;
+            job->completion = NULL;
+            job->num_active = 0;
+            job->terminating = 0;
 
-    list_init(&job->processes);
-
+            list_init(&job->processes);
+        }
+    }
     return job;
 }
 
@@ -1452,15 +1463,27 @@ DECL_HANDLER(make_process_system)
 DECL_HANDLER(create_job)
 {
     struct job *job;
+    struct unicode_str name;
+    struct directory *root = NULL;
+    const struct object_attributes *objattr = get_req_data();
+    const struct security_descriptor *sd;
 
-    job = create_job_object();
+    if (!objattr_is_valid( objattr, get_req_data_size() )) return;
 
-    if(job) {
-        reply->handle = alloc_handle( current->process, (struct object*)job, JOB_OBJECT_ALL_ACCESS, 0);
-        release_object(job);
-    } else {
-        reply->handle = 0;
+    sd = objattr->sd_len ? (const struct security_descriptor *)(objattr + 1) : NULL;
+    objattr_get_name( objattr, &name );
+
+    if (objattr->rootdir && !(root = get_directory_obj( current->process, objattr->rootdir, 0 ))) return;
+
+    if ((job = create_job_object( root, &name, req->attributes, sd )))
+    {
+        if (get_error() == STATUS_OBJECT_NAME_EXISTS)
+            reply->handle = alloc_handle( current->process, job, req->access, req->attributes );
+        else
+            reply->handle = alloc_handle_no_access_check( current->process, job, req->access, req->attributes );
+        release_object( job );
     }
+    if (root) release_object( root );
 }
 
 DECL_HANDLER(job_assign)
