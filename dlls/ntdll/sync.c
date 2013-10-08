@@ -650,8 +650,6 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
     case JobObjectEndOfJobTimeInformation:
     case JobObjectBasicAndIoAccountingInformation:
     case JobObjectExtendedLimitInformation:
-    case JobObjectJobSetInformation:
-    case MaxJobObjectInfoClass:
         status = STATUS_SUCCESS;
         break;
     default:
