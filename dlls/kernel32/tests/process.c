@@ -2080,22 +2080,24 @@ static void test_DuplicateHandle(void)
     CloseHandle(out);
 }
 
-static void test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD eOverlap)
+static void _test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD eOverlap)
 {
     DWORD CompletionKey, ret;
     ULONG_PTR CompletionValue;
     LPOVERLAPPED Overlapped;
 
     ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, 0);
-    ok(ret, "GetQueuedCompletionStatus: %x\n", GetLastError());
+    winetest_ok(ret, "GetQueuedCompletionStatus: %x\n", GetLastError());
     if(ret) {
-        ok(eKey == CompletionKey &&
+        winetest_ok(eKey == CompletionKey &&
             (ULONG_PTR)eVal == CompletionValue &&
             eOverlap == (DWORD_PTR)Overlapped,
             "Unexpected completion event: %x, %p, %p\n",
             CompletionKey, (void*)CompletionValue, (void*)Overlapped);
     }
 }
+
+#define test_job_completion(a, b, c, d) (winetest_set_location(__FILE__,__LINE__), 0) ? 0 : _test_job_completion(a, b, c, d)
 
 static void test_JobObject(void) {
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
