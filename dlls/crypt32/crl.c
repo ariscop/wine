@@ -29,6 +29,18 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(crypt);
 
+static void CRL_free(context_t *context)
+{
+    crl_t *crl = (crl_t*)context;
+
+    CryptMemFree(crl->ctx.pbCrlEncoded);
+    LocalFree(crl->ctx.pCrlInfo);
+}
+
+static const context_vtbl_t crl_vtbl = {
+    CRL_free
+};
+
 PCCRL_CONTEXT WINAPI CertCreateCRLContext(DWORD dwCertEncodingType,
  const BYTE* pbCrlEncoded, DWORD cbCrlEncoded)
 {
@@ -52,7 +64,7 @@ PCCRL_CONTEXT WINAPI CertCreateCRLContext(DWORD dwCertEncodingType,
     {
         BYTE *data = NULL;
 
-        crl = Context_CreateDataContext(sizeof(CRL_CONTEXT));
+        crl = Context_CreateDataContext(sizeof(CRL_CONTEXT), &crl_vtbl);
         if (!crl)
             goto end;
         data = CryptMemAlloc(cbCrlEncoded);
@@ -327,16 +339,8 @@ PCCRL_CONTEXT WINAPI CertDuplicateCRLContext(PCCRL_CONTEXT pCrlContext)
 {
     TRACE("(%p)\n", pCrlContext);
     if (pCrlContext)
-        Context_AddRef((void *)pCrlContext, sizeof(CRL_CONTEXT));
+        Context_AddRef(&crl_from_ptr(pCrlContext)->base);
     return pCrlContext;
-}
-
-static void CrlDataContext_Free(void *context)
-{
-    PCRL_CONTEXT crlContext = context;
-
-    CryptMemFree(crlContext->pbCrlEncoded);
-    LocalFree(crlContext->pCrlInfo);
 }
 
 BOOL WINAPI CertFreeCRLContext( PCCRL_CONTEXT pCrlContext)
@@ -346,16 +350,14 @@ BOOL WINAPI CertFreeCRLContext( PCCRL_CONTEXT pCrlContext)
     TRACE("(%p)\n", pCrlContext);
 
     if (pCrlContext)
-        ret = Context_Release((void *)pCrlContext, sizeof(CRL_CONTEXT),
-         CrlDataContext_Free);
+        ret = Context_Release(&crl_from_ptr(pCrlContext)->base);
     return ret;
 }
 
 DWORD WINAPI CertEnumCRLContextProperties(PCCRL_CONTEXT pCRLContext,
  DWORD dwPropId)
 {
-    CONTEXT_PROPERTY_LIST *properties = Context_GetProperties(
-     pCRLContext, sizeof(CRL_CONTEXT));
+    CONTEXT_PROPERTY_LIST *properties = Context_GetProperties(pCRLContext);
     DWORD ret;
 
     TRACE("(%p, %d)\n", pCRLContext, dwPropId);
@@ -388,8 +390,7 @@ static BOOL CRLContext_GetHashProp(PCCRL_CONTEXT context, DWORD dwPropId,
 static BOOL CRLContext_GetProperty(PCCRL_CONTEXT context, DWORD dwPropId,
                                    void *pvData, DWORD *pcbData)
 {
-    CONTEXT_PROPERTY_LIST *properties =
-     Context_GetProperties(context, sizeof(CRL_CONTEXT));
+    CONTEXT_PROPERTY_LIST *properties = Context_GetProperties(context);
     BOOL ret;
     CRYPT_DATA_BLOB blob;
 
@@ -488,8 +489,7 @@ BOOL WINAPI CertGetCRLContextProperty(PCCRL_CONTEXT pCRLContext,
 static BOOL CRLContext_SetProperty(PCCRL_CONTEXT context, DWORD dwPropId,
  DWORD dwFlags, const void *pvData)
 {
-    CONTEXT_PROPERTY_LIST *properties =
-     Context_GetProperties(context, sizeof(CRL_CONTEXT));
+    CONTEXT_PROPERTY_LIST *properties = Context_GetProperties(context);
     BOOL ret;
 
     TRACE("(%p, %d, %08x, %p)\n", context, dwPropId, dwFlags, pvData);

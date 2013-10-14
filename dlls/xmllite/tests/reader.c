@@ -855,6 +855,7 @@ static struct test_entry pi_tests[] = {
     { "<?pi  ?>", "pi", "", S_OK },
     { "<?pi pi data?>", "pi", "pi data", S_OK },
     { "<?pi pi data  ?>", "pi", "pi data  ", S_OK },
+    { "<?pi    data  ?>", "pi", "data  ", S_OK },
     { "<?pi:pi?>", NULL, NULL, NC_E_NAMECOLON, WC_E_NAMECHARACTER },
     { "<?:pi ?>", NULL, NULL, WC_E_PI, WC_E_NAMECHARACTER },
     { "<?-pi ?>", NULL, NULL, WC_E_PI, WC_E_NAMECHARACTER },
@@ -943,9 +944,13 @@ static const char misc_test_xml[] =
     " \t \r \n"
     "<!-- comment4 -->"
     "<a>"
+    "\r\n\t"
     "<b/>"
+    "text"
     "<!-- comment -->"
+    "text2"
     "<?pi pibody ?>"
+    "\r\n"
     "</a>"
 ;
 
@@ -959,9 +964,13 @@ static struct nodes_test misc_test = {
         XmlNodeType_Whitespace,
         XmlNodeType_Comment,
         XmlNodeType_Element,
+        XmlNodeType_Whitespace,
         XmlNodeType_Element,
+        XmlNodeType_Text,
         XmlNodeType_Comment,
+        XmlNodeType_Text,
         XmlNodeType_ProcessingInstruction,
+        XmlNodeType_Whitespace,
         XmlNodeType_EndElement,
         XmlNodeType_None
     }
@@ -991,6 +1000,15 @@ static void test_read_full(void)
         ok(test->types[i] != XmlNodeType_None, "%d: unexpected end of test data\n", i);
         if (test->types[i] == XmlNodeType_None) break;
         ok(type == test->types[i], "%d: got wrong type %d, expected %d\n", i, type, test->types[i]);
+        if (type == XmlNodeType_Whitespace)
+        {
+            const WCHAR *ptr;
+            UINT len = 0;
+
+            hr = IXmlReader_GetValue(reader, &ptr, &len);
+            ok(hr == S_OK, "%d: GetValue failed 0x%08x\n", i, hr);
+            ok(len > 0, "%d: wrong value length %d\n", i, len);
+        }
         hr = IXmlReader_Read(reader, &type);
         i++;
     }

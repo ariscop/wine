@@ -26,186 +26,115 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(context);
 
-typedef enum _ContextType {
-    ContextTypeData,
-    ContextTypeLink,
-} ContextType;
+#define CONTEXT_FROM_BASE_CONTEXT(p) (void*)(p+1)
+#define BASE_CONTEXT_FROM_CONTEXT(p) ((BASE_CONTEXT*)(p)-1)
 
-typedef struct _BASE_CONTEXT
+void *Context_CreateDataContext(size_t contextSize, const context_vtbl_t *vtbl)
 {
-    LONG        ref;
-    ContextType type;
-} BASE_CONTEXT;
+    BASE_CONTEXT *context;
 
-typedef struct _DATA_CONTEXT
-{
-    LONG                   ref;
-    ContextType            type; /* always ContextTypeData */
-    CONTEXT_PROPERTY_LIST *properties;
-} DATA_CONTEXT;
+    context = CryptMemAlloc(contextSize + sizeof(BASE_CONTEXT));
+    if (!context)
+        return NULL;
 
-typedef struct _LINK_CONTEXT
-{
-    LONG          ref;
-    ContextType   type; /* always ContextTypeLink */
-    BASE_CONTEXT *linked;
-} LINK_CONTEXT;
-
-#define CONTEXT_FROM_BASE_CONTEXT(p, s) ((LPBYTE)(p) - (s))
-#define BASE_CONTEXT_FROM_CONTEXT(p, s) (BASE_CONTEXT*)((LPBYTE)(p) + (s))
-
-void *Context_CreateDataContext(size_t contextSize)
-{
-    void *ret = CryptMemAlloc(contextSize + sizeof(DATA_CONTEXT));
-
-    if (ret)
+    context->vtbl = vtbl;
+    context->ref = 1;
+    context->linked = NULL;
+    context->properties = ContextPropertyList_Create();
+    if (!context->properties)
     {
-        DATA_CONTEXT *context = (DATA_CONTEXT*)((LPBYTE)ret + contextSize);
-
-        context->ref = 1;
-        context->type = ContextTypeData;
-        context->properties = ContextPropertyList_Create();
-        if (!context->properties)
-        {
-            CryptMemFree(ret);
-            ret = NULL;
-        }
+        CryptMemFree(context);
+        return NULL;
     }
-    TRACE("returning %p\n", ret);
-    return ret;
+
+    TRACE("returning %p\n", context);
+    return CONTEXT_FROM_BASE_CONTEXT(context);
 }
 
-void *Context_CreateLinkContext(unsigned int contextSize, void *linked, unsigned int extra,
- BOOL addRef)
+context_t *Context_CreateLinkContext(unsigned int contextSize, context_t *linked, unsigned int extra)
 {
-    void *context = CryptMemAlloc(contextSize + sizeof(LINK_CONTEXT) + extra);
+    context_t *context;
 
     TRACE("(%d, %p, %d)\n", contextSize, linked, extra);
 
-    if (context)
-    {
-        LINK_CONTEXT *linkContext = (LINK_CONTEXT*)BASE_CONTEXT_FROM_CONTEXT(
-         context, contextSize);
-        BASE_CONTEXT *linkedBase = BASE_CONTEXT_FROM_CONTEXT(linked,
-         contextSize);
+    context = CryptMemAlloc(contextSize + sizeof(BASE_CONTEXT) + extra);
+    if (!context)
+        return NULL;
 
-        memcpy(context, linked, contextSize);
-        linkContext->ref = 1;
-        linkContext->type = ContextTypeLink;
-        linkContext->linked = linkedBase;
-        if (addRef)
-            Context_AddRef(linked, contextSize);
-        TRACE("%p's ref count is %d\n", context, linkContext->ref);
-    }
+    memcpy(context_ptr(context), context_ptr(linked), contextSize);
+    context->vtbl = linked->vtbl;
+    context->ref = 1;
+    context->linked = linked;
+    Context_AddRef(linked);
+
     TRACE("returning %p\n", context);
     return context;
 }
 
-void Context_AddRef(void *context, size_t contextSize)
+void Context_AddRef(context_t *context)
 {
-    BASE_CONTEXT *baseContext = BASE_CONTEXT_FROM_CONTEXT(context, contextSize);
-
-    InterlockedIncrement(&baseContext->ref);
-    TRACE("%p's ref count is %d\n", context, baseContext->ref);
-    if (baseContext->type == ContextTypeLink)
-    {
-        void *linkedContext = Context_GetLinkedContext(context, contextSize);
-        BASE_CONTEXT *linkedBase = BASE_CONTEXT_FROM_CONTEXT(linkedContext,
-         contextSize);
-
-        /* Add-ref the linked contexts too */
-        while (linkedContext && linkedBase->type == ContextTypeLink)
-        {
-            InterlockedIncrement(&linkedBase->ref);
-            TRACE("%p's ref count is %d\n", linkedContext, linkedBase->ref);
-            linkedContext = Context_GetLinkedContext(linkedContext,
-             contextSize);
-            if (linkedContext)
-                linkedBase = BASE_CONTEXT_FROM_CONTEXT(linkedContext,
-                 contextSize);
-            else
-                linkedBase = NULL;
-        }
-        if (linkedContext)
-        {
-            /* It's not a link context, so it wasn't add-ref'ed in the while
-             * loop, so add-ref it here.
-             */
-            linkedBase = BASE_CONTEXT_FROM_CONTEXT(linkedContext,
-             contextSize);
-            InterlockedIncrement(&linkedBase->ref);
-            TRACE("%p's ref count is %d\n", linkedContext, linkedBase->ref);
-        }
-    }
+    InterlockedIncrement(&context->ref);
+    TRACE("(%p) ref=%d\n", context, context->ref);
 }
 
 void *Context_GetExtra(const void *context, size_t contextSize)
 {
-    BASE_CONTEXT *baseContext = BASE_CONTEXT_FROM_CONTEXT(context, contextSize);
+    BASE_CONTEXT *baseContext = BASE_CONTEXT_FROM_CONTEXT(context);
 
-    assert(baseContext->type == ContextTypeLink);
-    return (LPBYTE)baseContext + sizeof(LINK_CONTEXT);
+    assert(baseContext->linked != NULL);
+    return (LPBYTE)CONTEXT_FROM_BASE_CONTEXT(baseContext) + contextSize;
 }
 
-void *Context_GetLinkedContext(void *context, size_t contextSize)
+void *Context_GetLinkedContext(void *context)
 {
-    BASE_CONTEXT *baseContext = BASE_CONTEXT_FROM_CONTEXT(context, contextSize);
+    BASE_CONTEXT *baseContext = BASE_CONTEXT_FROM_CONTEXT(context);
 
-    assert(baseContext->type == ContextTypeLink);
-    return CONTEXT_FROM_BASE_CONTEXT(((LINK_CONTEXT*)baseContext)->linked, contextSize);
+    assert(baseContext->linked != NULL);
+    return CONTEXT_FROM_BASE_CONTEXT(baseContext->linked);
 }
 
-CONTEXT_PROPERTY_LIST *Context_GetProperties(const void *context, size_t contextSize)
+CONTEXT_PROPERTY_LIST *Context_GetProperties(const void *context)
 {
-    BASE_CONTEXT *ptr = BASE_CONTEXT_FROM_CONTEXT(context, contextSize);
+    BASE_CONTEXT *ptr = BASE_CONTEXT_FROM_CONTEXT(context);
 
-    while (ptr && ptr->type == ContextTypeLink)
-        ptr = ((LINK_CONTEXT*)ptr)->linked;
-    return (ptr && ptr->type == ContextTypeData) ? ((DATA_CONTEXT*)ptr)->properties : NULL;
+    while (ptr && ptr->linked)
+        ptr = ptr->linked;
+
+    return ptr->properties;
 }
 
-BOOL Context_Release(void *context, size_t contextSize,
- ContextFreeFunc dataContextFree)
+BOOL Context_Release(context_t *context)
 {
-    BASE_CONTEXT *base = BASE_CONTEXT_FROM_CONTEXT(context, contextSize);
     BOOL ret = TRUE;
 
-    if (base->ref <= 0)
+    if (context->ref <= 0)
     {
-        ERR("%p's ref count is %d\n", context, base->ref);
+        ERR("%p's ref count is %d\n", context, context->ref);
         return FALSE;
     }
-    if (base->type == ContextTypeLink)
-    {
-        /* The linked context is of the same type as this, so release
-         * it as well, using the same offset and data free function.
-         */
-        ret = Context_Release(CONTEXT_FROM_BASE_CONTEXT(
-         ((LINK_CONTEXT*)base)->linked, contextSize), contextSize,
-         dataContextFree);
-    }
-    if (InterlockedDecrement(&base->ref) == 0)
+    if (InterlockedDecrement(&context->ref) == 0)
     {
         TRACE("freeing %p\n", context);
-        if (base->type == ContextTypeData)
+        if (!context->linked)
         {
-            ContextPropertyList_Free(((DATA_CONTEXT*)base)->properties);
-            dataContextFree(context);
+            ContextPropertyList_Free(context->properties);
+            context->vtbl->free(context);
+        } else {
+            Context_Release(context->linked);
         }
         CryptMemFree(context);
     }
     else
-        TRACE("%p's ref count is %d\n", context, base->ref);
+        TRACE("%p's ref count is %d\n", context, context->ref);
     return ret;
 }
 
-void Context_CopyProperties(const void *to, const void *from,
- size_t contextSize)
+void Context_CopyProperties(const void *to, const void *from)
 {
     CONTEXT_PROPERTY_LIST *toProperties, *fromProperties;
 
-    toProperties = Context_GetProperties(to, contextSize);
-    fromProperties = Context_GetProperties(from, contextSize);
+    toProperties = Context_GetProperties(to);
+    fromProperties = Context_GetProperties(from);
     assert(toProperties && fromProperties);
     ContextPropertyList_Copy(toProperties, fromProperties);
 }
@@ -249,20 +178,19 @@ static inline struct list *ContextList_ContextToEntry(const struct ContextList *
 static inline void *ContextList_EntryToContext(const struct ContextList *list,
  struct list *entry)
 {
-    return (LPBYTE)entry - sizeof(LINK_CONTEXT) - list->contextSize;
+    return (LPBYTE)entry - list->contextSize;
 }
 
 void *ContextList_Add(struct ContextList *list, void *toLink, void *toReplace)
 {
-    void *context;
+    context_t *context;
 
     TRACE("(%p, %p, %p)\n", list, toLink, toReplace);
 
-    context = Context_CreateLinkContext(list->contextSize, toLink,
-     sizeof(struct list), TRUE);
+    context = Context_CreateLinkContext(list->contextSize, context_from_ptr(toLink), sizeof(struct list));
     if (context)
     {
-        struct list *entry = ContextList_ContextToEntry(list, context);
+        struct list *entry = ContextList_ContextToEntry(list, CONTEXT_FROM_BASE_CONTEXT(context));
 
         TRACE("adding %p\n", context);
         EnterCriticalSection(&list->cs);
@@ -275,13 +203,13 @@ void *ContextList_Add(struct ContextList *list, void *toLink, void *toReplace)
             entry->prev->next = entry;
             entry->next->prev = entry;
             existing->prev = existing->next = existing;
-            list->contextInterface->free(toReplace);
+            Context_Release(context_from_ptr(toReplace));
         }
         else
             list_add_head(&list->contexts, entry);
         LeaveCriticalSection(&list->cs);
     }
-    return context;
+    return CONTEXT_FROM_BASE_CONTEXT(context);
 }
 
 void *ContextList_Enum(struct ContextList *list, void *pPrev)
@@ -295,7 +223,7 @@ void *ContextList_Enum(struct ContextList *list, void *pPrev)
         struct list *prevEntry = ContextList_ContextToEntry(list, pPrev);
 
         listNext = list_next(&list->contexts, prevEntry);
-        list->contextInterface->free(pPrev);
+        Context_Release(context_from_ptr(pPrev));
     }
     else
         listNext = list_next(&list->contexts, &list->contexts);
@@ -304,7 +232,7 @@ void *ContextList_Enum(struct ContextList *list, void *pPrev)
     if (listNext)
     {
         ret = ContextList_EntryToContext(list, listNext);
-        list->contextInterface->duplicate(ret);
+        Context_AddRef(context_from_ptr(ret));
     }
     else
         ret = NULL;
@@ -339,7 +267,7 @@ static void ContextList_Empty(struct ContextList *list)
 
         TRACE("removing %p\n", context);
         list_remove(entry);
-        list->contextInterface->free(context);
+        Context_Release(context_from_ptr(context));
     }
     LeaveCriticalSection(&list->cs);
 }

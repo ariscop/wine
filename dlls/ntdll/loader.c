@@ -1881,7 +1881,7 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname,
             attr.ObjectName = &nt_name;
             attr.SecurityDescriptor = NULL;
             attr.SecurityQualityOfService = NULL;
-            if (NtOpenFile( handle, GENERIC_READ, &attr, &io, FILE_SHARE_READ|FILE_SHARE_DELETE, 0 )) *handle = 0;
+            if (NtOpenFile( handle, GENERIC_READ, &attr, &io, FILE_SHARE_READ|FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_NONALERT|FILE_NON_DIRECTORY_FILE )) *handle = 0;
             goto found;
         }
 
@@ -1916,7 +1916,7 @@ static NTSTATUS find_dll_file( const WCHAR *load_path, const WCHAR *libname,
         attr.ObjectName = &nt_name;
         attr.SecurityDescriptor = NULL;
         attr.SecurityQualityOfService = NULL;
-        if (NtOpenFile( handle, GENERIC_READ, &attr, &io, FILE_SHARE_READ|FILE_SHARE_DELETE, 0 )) *handle = 0;
+        if (NtOpenFile( handle, GENERIC_READ, &attr, &io, FILE_SHARE_READ|FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_NONALERT|FILE_NON_DIRECTORY_FILE )) *handle = 0;
     }
 found:
     RtlFreeUnicodeString( &nt_name );
@@ -2124,13 +2124,16 @@ NTSTATUS WINAPI LdrAddRefDll( ULONG flags, HMODULE module )
     NTSTATUS ret = STATUS_SUCCESS;
     WINE_MODREF *wm;
 
-    if (flags) FIXME( "%p flags %x not implemented\n", module, flags );
+    if (flags & ~LDR_ADDREF_DLL_PIN) FIXME( "%p flags %x not implemented\n", module, flags );
 
     RtlEnterCriticalSection( &loader_section );
 
     if ((wm = get_modref( module )))
     {
-        if (wm->ldr.LoadCount != -1) wm->ldr.LoadCount++;
+        if (flags & LDR_ADDREF_DLL_PIN)
+            wm->ldr.LoadCount = -1;
+        else
+            if (wm->ldr.LoadCount != -1) wm->ldr.LoadCount++;
         TRACE( "(%s) ldr.LoadCount: %d\n", debugstr_w(wm->ldr.BaseDllName.Buffer), wm->ldr.LoadCount );
     }
     else ret = STATUS_INVALID_PARAMETER;
