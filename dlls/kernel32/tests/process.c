@@ -2080,13 +2080,13 @@ static void test_DuplicateHandle(void)
     CloseHandle(out);
 }
 
-static void _test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD eOverlap)
+static void _test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD eOverlap, DWORD wait)
 {
     DWORD CompletionKey, ret;
     ULONG_PTR CompletionValue;
     LPOVERLAPPED Overlapped;
 
-    ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, 0);
+    ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, wait);
     winetest_ok(ret, "GetQueuedCompletionStatus: %x\n", GetLastError());
     if(ret) {
         winetest_ok(eKey == CompletionKey &&
@@ -2097,7 +2097,7 @@ static void _test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD e
     }
 }
 
-#define test_job_completion(a, b, c, d) (winetest_set_location(__FILE__,__LINE__), 0) ? 0 : _test_job_completion(a, b, c, d)
+#define test_job_completion(a, b, c, d, e) (winetest_set_location(__FILE__,__LINE__), 0) ? 0 : _test_job_completion(a, b, c, d, e)
 
 static void test_JobObject(void) {
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
@@ -2160,11 +2160,11 @@ static void test_JobObject(void) {
         ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
     }
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
 
     ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
         "CreateProcess: (%d)\n", GetLastError());
@@ -2177,8 +2177,8 @@ static void test_JobObject(void) {
 
     winetest_wait_child_process(pi[2].hProcess);
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[2].dwProcessId);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[2].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
 
     thisProcess = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE,
                               FALSE, GetCurrentProcessId());
@@ -2193,9 +2193,9 @@ static void test_JobObject(void) {
 
     winetest_wait_child_process(pi[3].hProcess);
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, GetCurrentProcessId());
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[3].dwProcessId);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[3].dwProcessId);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, GetCurrentProcessId(), 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[3].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[3].dwProcessId, 100);
 
     todo_wine ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
         "CreateProcess expected failure\n");
