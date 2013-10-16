@@ -3754,7 +3754,7 @@ void transform_world(struct wined3d_context *context, const struct wined3d_state
         gl_info->gl_ops.gl.p_glLoadIdentity();
         checkGLcall("glLoadIdentity()");
     }
-    else
+    else if (!context->swapchain->device->vertexBlendSW)
     {
         gl_info->gl_ops.gl.p_glLoadMatrixf(&state->transforms[WINED3D_TS_VIEW].u.m[0][0]);
         checkGLcall("glLoadMatrixf");
@@ -3840,11 +3840,31 @@ static void state_vertexblend_w(struct wined3d_context *context, const struct wi
     enum wined3d_vertex_blend_flags f = state->render_states[WINED3D_RS_VERTEXBLEND];
     static unsigned int once;
 
-    if (f == WINED3D_VBF_DISABLE)
-        return;
+    switch (f) {
+        case WINED3D_VBF_0WEIGHTS:
+        case WINED3D_VBF_1WEIGHTS:
+        case WINED3D_VBF_2WEIGHTS:
+        case WINED3D_VBF_3WEIGHTS:
+            if(!once) {
+                once = TRUE;
+                FIXME("Vertex blending enabled, but not supported by hardware. Using software emulation.\n");
+            }
+            if (!context->swapchain->device->vertexBlendSW) {
+                context->swapchain->device->vertexBlendSW = TRUE;
+                transform_world(context, state, state_id);
+            }
+            break;
 
-    if (!once++) FIXME("Vertex blend flags %#x not supported.\n", f);
-    else WARN("Vertex blend flags %#x not supported.\n", f);
+        case WINED3D_VBF_TWEENING:
+            WARN("Vertex blend flags %#x not supported.\n", f);
+            /* fall through */
+
+        default:
+            if (context->swapchain->device->vertexBlendSW) {
+                context->swapchain->device->vertexBlendSW = FALSE;
+                transform_world(context, state, state_id);
+            }
+    }
 }
 
 static void state_vertexblend(struct wined3d_context *context, const struct wined3d_state *state, DWORD state_id)
@@ -3947,6 +3967,9 @@ void transform_view(struct wined3d_context *context, const struct wined3d_state 
             if (!isStateDirty(context, STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(k))))
                 transform_worldex(context, state, STATE_TRANSFORM(WINED3D_TS_WORLD_MATRIX(k)));
         }
+    } else {
+        gl_info->gl_ops.gl.p_glLoadMatrixf(&state->transforms[WINED3D_TS_VIEW].u.m[0][0]);
+        checkGLcall("glLoadMatrixf");
     }
 }
 

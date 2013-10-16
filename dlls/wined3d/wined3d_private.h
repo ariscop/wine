@@ -1882,12 +1882,13 @@ struct wined3d_device
     const struct blit_shader *blitter;
 
     BYTE vertexBlendUsed : 1;           /* To avoid needless setting of the blend matrices */
+    BYTE vertexBlendSW : 1;             /* Software fallback */
     BYTE bCursorVisible : 1;
     BYTE d3d_initialized : 1;
     BYTE inScene : 1;                   /* A flag to check for proper BeginScene / EndScene call pairs */
     BYTE softwareVertexProcessing : 1;  /* process vertex shaders using software or hardware */
     BYTE filter_messages : 1;
-    BYTE padding : 2;
+    BYTE padding : 1;
 
     unsigned char           surface_alignment; /* Line Alignment of surfaces                      */
 
