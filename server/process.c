@@ -1059,7 +1059,7 @@ DECL_HANDLER(new_process)
     struct process *process;
     struct process *parent = current->process;
     int socket_fd = thread_get_inflight_fd( current, req->socket_fd );
-    int breakaway = 0;
+    int inherit_job = 0;
 
     if (socket_fd == -1)
     {
@@ -1085,13 +1085,13 @@ DECL_HANDLER(new_process)
         return;
     }
 
-    if (parent->job && (req->create_flags & CREATE_BREAKAWAY_FROM_JOB))
+    if (parent->job)
     {
-        if(job_breakaway_ok(parent->job))
+        if(!(req->create_flags & CREATE_BREAKAWAY_FROM_JOB))
         {
-            breakaway = 1;
+            inherit_job = 1;
         }
-        else
+        else if (!job_breakaway_ok(parent->job))
         {
             set_error( STATUS_ACCESS_DENIED );
             close( socket_fd );
@@ -1146,7 +1146,7 @@ DECL_HANDLER(new_process)
     process = thread->process;
     process->debug_children = !!(req->create_flags & DEBUG_PROCESS);
     process->startup_info = (struct startup_info *)grab_object( info );
-    if(parent->job && !breakaway)
+    if(inherit_job)
         job_add_process(parent->job, process);
 
     /* connect to the window station */
