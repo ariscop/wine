@@ -282,6 +282,7 @@ static void job_destroy( struct object *obj )
 {
     struct job *job = (struct job*)obj;
     assert(obj->ops == &job_ops);
+    assert(job->num_active == 0);
 
     if(job->completion)
         release_object(job->completion);
