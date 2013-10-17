@@ -112,6 +112,7 @@ DECL_HANDLER(terminate_job);
 DECL_HANDLER(process_in_job);
 DECL_HANDLER(job_assign);
 DECL_HANDLER(job_set_completion);
+DECL_HANDLER(job_set_limit);
 DECL_HANDLER(get_new_process_info);
 DECL_HANDLER(new_thread);
 DECL_HANDLER(get_startup_info);
@@ -376,6 +377,7 @@ static const req_handler req_handlers[REQ_NB_REQUESTS] =
     (req_handler)req_process_in_job,
     (req_handler)req_job_assign,
     (req_handler)req_job_set_completion,
+    (req_handler)req_job_set_limit,
     (req_handler)req_get_new_process_info,
     (req_handler)req_new_thread,
     (req_handler)req_get_startup_info,
@@ -693,6 +695,9 @@ C_ASSERT( FIELD_OFFSET(struct job_set_completion_request, handle) == 12 );
 C_ASSERT( FIELD_OFFSET(struct job_set_completion_request, CompletionKey) == 16 );
 C_ASSERT( FIELD_OFFSET(struct job_set_completion_request, CompletionPort) == 24 );
 C_ASSERT( sizeof(struct job_set_completion_request) == 32 );
+C_ASSERT( FIELD_OFFSET(struct job_set_limit_request, handle) == 12 );
+C_ASSERT( FIELD_OFFSET(struct job_set_limit_request, limit_flags) == 16 );
+C_ASSERT( sizeof(struct job_set_limit_request) == 24 );
 C_ASSERT( FIELD_OFFSET(struct get_new_process_info_request, info) == 12 );
 C_ASSERT( sizeof(struct get_new_process_info_request) == 16 );
 C_ASSERT( FIELD_OFFSET(struct get_new_process_info_reply, success) == 8 );

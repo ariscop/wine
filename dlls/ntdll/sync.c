@@ -627,6 +627,18 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
 
     switch(class)
     {
+    case JobObjectExtendedLimitInformation:
+        if(len != sizeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION))
+            return STATUS_INVALID_PARAMETER;
+
+        SERVER_START_REQ( job_set_limit )
+        {
+            req->handle = wine_server_obj_handle(handle);
+            req->limit_flags = ((PJOBOBJECT_EXTENDED_LIMIT_INFORMATION)info)->BasicLimitInformation.LimitFlags;
+            status = wine_server_call(req);
+        }
+        SERVER_END_REQ;
+        break;
     case JobObjectAssociateCompletionPortInformation:
         if(len != sizeof(JOBOBJECT_ASSOCIATE_COMPLETION_PORT))
             return STATUS_INVALID_PARAMETER;
@@ -649,7 +661,6 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
     case JobObjectSecurityLimitInformation:
     case JobObjectEndOfJobTimeInformation:
     case JobObjectBasicAndIoAccountingInformation:
-    case JobObjectExtendedLimitInformation:
         status = STATUS_SUCCESS;
         break;
     default:

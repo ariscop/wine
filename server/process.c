@@ -151,6 +151,7 @@ struct job
     struct completion *completion;
     int num_active;
     int terminating;
+    int limit_flags;
 };
 
 static const struct object_ops job_ops =
@@ -191,6 +192,7 @@ static struct job *create_job_object( struct directory *root, const struct unico
             job->completion = NULL;
             job->num_active = 0;
             job->terminating = 0;
+            job->limit_flags = 0;
 
             list_init(&job->processes);
         }
@@ -296,6 +298,11 @@ static void job_dump_info( struct object *obj, int verbose )
 static int job_signaled( struct object *obj, struct wait_queue_entry *entry )
 {
     return 0;
+}
+
+static int job_breakaway_ok( struct job *job )
+{
+    return (job->limit_flags & (JOB_OBJECT_LIMIT_BREAKAWAY_OK | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK)) ? 1 : 0;
 }
 
 struct ptid_entry
@@ -1051,6 +1058,7 @@ DECL_HANDLER(new_process)
     struct process *process;
     struct process *parent = current->process;
     int socket_fd = thread_get_inflight_fd( current, req->socket_fd );
+    int breakaway = 0;
 
     if (socket_fd == -1)
     {
@@ -1074,6 +1082,20 @@ DECL_HANDLER(new_process)
     {
         create_process( socket_fd, NULL, 0 );
         return;
+    }
+
+    if (parent->job && (req->create_flags & CREATE_BREAKAWAY_FROM_JOB))
+    {
+        if(job_breakaway_ok(parent->job))
+        {
+            breakaway = 1;
+        }
+        else
+        {
+            set_error( STATUS_ACCESS_DENIED );
+            close( socket_fd );
+            return;
+        }
     }
 
     /* build the startup info for a new process */
@@ -1123,7 +1145,7 @@ DECL_HANDLER(new_process)
     process = thread->process;
     process->debug_children = !!(req->create_flags & DEBUG_PROCESS);
     process->startup_info = (struct startup_info *)grab_object( info );
-    if(parent->job)
+    if(parent->job && !breakaway)
         job_add_process(parent->job, process);
 
     /* connect to the window station */
@@ -1563,5 +1585,17 @@ DECL_HANDLER(job_set_completion)
     job->completion = completion;
 
 error:
+    release_object(job);
+}
+
+DECL_HANDLER(job_set_limit)
+{
+    struct job *job;
+
+    if(!(job = get_job_from_handle( current->process, req->handle, JOB_OBJECT_SET_ATTRIBUTES )))
+        return;
+
+    job->limit_flags = req->limit_flags;
+
     release_object(job);
 }

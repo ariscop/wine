@@ -2197,7 +2197,7 @@ static void test_JobObject(void) {
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[3].dwProcessId, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[3].dwProcessId, 100);
 
-    todo_wine ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
+    ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
         "CreateProcess expected failure\n");
 
     info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
@@ -2211,7 +2211,7 @@ static void test_JobObject(void) {
 
     if(pIsProcessInJob) {
         ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-        todo_wine ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
+        ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
     }
 
     info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
@@ -2225,7 +2225,7 @@ static void test_JobObject(void) {
 
     if(pIsProcessInJob) {
         ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-        todo_wine ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
+        ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
     }
 }
 

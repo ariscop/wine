@@ -721,6 +721,11 @@ struct rawinput_device
     obj_handle_t CompletionPort;
 @END
 
+@REQ(job_set_limit)
+    obj_handle_t handle;
+    int          limit_flags;
+@END
+
 /* Retrieve information about a newly started process */
 @REQ(get_new_process_info)
     obj_handle_t info;           /* info handle returned from new_process_request */
