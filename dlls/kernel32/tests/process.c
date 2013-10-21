@@ -2219,7 +2219,7 @@ static void test_JobObject(void) {
     ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &info, sizeof(info));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
+    todo_wine ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
         "CreateProcess: (%d)\n", GetLastError());
     winetest_wait_child_process(pi[0].hProcess);
 
