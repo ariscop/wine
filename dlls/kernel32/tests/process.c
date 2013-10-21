@@ -2227,6 +2227,20 @@ static void test_JobObject(void) {
         ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
         ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
     }
+
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &info, sizeof(info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    todo_wine ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
+        "CreateProcess: (%d)\n", GetLastError());
+    winetest_wait_child_process(pi[0].hProcess);
+
+    if(pIsProcessInJob) {
+        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
+        ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
+    }
 }
 
 START_TEST(process)
