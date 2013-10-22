@@ -2172,6 +2172,8 @@ static void test_JobObject(void) {
     ret = pAssignProcessToJobObject(JobObject, pi[2].hProcess);
     ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
 
+    ok(WaitForSingleObject(JobObject, 0), "expected not signaled\n");
+
     ret = pTerminateJobObject( JobObject, 0 );
     ok(ret, "TerminateJobObject (%d)\n", GetLastError());
 
@@ -2179,6 +2181,8 @@ static void test_JobObject(void) {
 
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[2].dwProcessId, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
+
+    todo_wine ok(!WaitForSingleObject(JobObject, 0), "expected signaled\n");
 
     thisProcess = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE,
                               FALSE, GetCurrentProcessId());
