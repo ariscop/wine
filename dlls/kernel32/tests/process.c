@@ -2103,7 +2103,7 @@ static void test_JobObject(void) {
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION info;
     PROCESS_INFORMATION pi[4];
-    STARTUPINFO si[4] = {{0}};
+    STARTUPINFOA si[4] = {{0}};
     HANDLE JobObject;
     HANDLE IOPort;
     HANDLE thisProcess;
