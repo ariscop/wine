@@ -19,6 +19,8 @@
 #ifndef __CRYPT32_PRIVATE_H__
 #define __CRYPT32_PRIVATE_H__
 
+#include "wine/list.h"
+
 /* a few asn.1 tags we need */
 #define ASN_BOOL            (ASN_UNIVERSAL | ASN_PRIMITIVE | 0x01)
 #define ASN_BITSTRING       (ASN_UNIVERSAL | ASN_PRIMITIVE | 0x03)
@@ -157,20 +159,29 @@ void crypt_sip_free(void) DECLSPEC_HIDDEN;
 void root_store_free(void) DECLSPEC_HIDDEN;
 void default_chain_engine_free(void) DECLSPEC_HIDDEN;
 
+/* (Internal) certificate store types and functions */
+struct WINE_CRYPTCERTSTORE;
+
 typedef struct _CONTEXT_PROPERTY_LIST CONTEXT_PROPERTY_LIST;
 
 typedef struct _context_t context_t;
 
 typedef struct {
     void (*free)(context_t*);
+    struct _context_t *(*clone)(context_t*,struct WINE_CRYPTCERTSTORE*,BOOL);
 } context_vtbl_t;
 
-typedef struct _context_t {
+struct _context_t {
     const context_vtbl_t *vtbl;
     LONG ref;
+    struct WINE_CRYPTCERTSTORE *store;
     struct _context_t *linked;
     CONTEXT_PROPERTY_LIST *properties;
-} BASE_CONTEXT;
+    union {
+        struct list entry;
+        void *ptr;
+    } u;
+};
 
 static inline context_t *context_from_ptr(const void *ptr)
 {
@@ -251,31 +262,20 @@ extern const WINE_CONTEXT_INTERFACE *pCertInterface DECLSPEC_HIDDEN;
 extern const WINE_CONTEXT_INTERFACE *pCRLInterface DECLSPEC_HIDDEN;
 extern const WINE_CONTEXT_INTERFACE *pCTLInterface DECLSPEC_HIDDEN;
 
-/* (Internal) certificate store types and functions */
-struct WINE_CRYPTCERTSTORE;
-
 typedef struct WINE_CRYPTCERTSTORE * (*StoreOpenFunc)(HCRYPTPROV hCryptProv,
  DWORD dwFlags, const void *pvPara);
 
-/* Called to enumerate the next context in a store. */
-typedef void * (*EnumFunc)(struct WINE_CRYPTCERTSTORE *store, void *pPrev);
-
-/* Called to add a context to a store.  If toReplace is not NULL,
- * context replaces toReplace in the store, and access checks should not be
- * performed.  Otherwise context is a new context, and it should only be
- * added if the store allows it.  If ppStoreContext is not NULL, the added
- * context should be returned in *ppStoreContext.
- */
-typedef BOOL (*AddFunc)(struct WINE_CRYPTCERTSTORE *store, void *context,
- void *toReplace, const void **ppStoreContext);
-
-typedef BOOL (*DeleteFunc)(struct WINE_CRYPTCERTSTORE *store, void *context);
-
 typedef struct _CONTEXT_FUNCS
 {
-    AddFunc    addContext;
-    EnumFunc   enumContext;
-    DeleteFunc deleteContext;
+  /* Called to add a context to a store.  If toReplace is not NULL,
+   * context replaces toReplace in the store, and access checks should not be
+   * performed.  Otherwise context is a new context, and it should only be
+   * added if the store allows it.  If ppStoreContext is not NULL, the added
+   * context should be returned in *ppStoreContext.
+   */
+    BOOL (*addContext)(struct WINE_CRYPTCERTSTORE*,context_t*,context_t*,context_t**,BOOL);
+    context_t *(*enumContext)(struct WINE_CRYPTCERTSTORE *store, context_t *prev);
+    BOOL (*delete)(struct WINE_CRYPTCERTSTORE*,context_t*);
 } CONTEXT_FUNCS;
 
 typedef enum _CertStoreType {
@@ -298,6 +298,7 @@ typedef enum _CertStoreType {
 typedef struct {
     void (*addref)(struct WINE_CRYPTCERTSTORE*);
     DWORD (*release)(struct WINE_CRYPTCERTSTORE*,DWORD);
+    void (*releaseContext)(struct WINE_CRYPTCERTSTORE*,context_t*);
     BOOL (*control)(struct WINE_CRYPTCERTSTORE*,DWORD,DWORD,void const*);
     CONTEXT_FUNCS certs;
     CONTEXT_FUNCS crls;
@@ -388,39 +389,21 @@ DWORD cert_name_to_str_with_indent(DWORD dwCertEncodingType, DWORD indent,
  * which should be one of CERT_CONTEXT, CRL_CONTEXT, or CTL_CONTEXT.
  * Free with Context_Release.
  */
-void *Context_CreateDataContext(size_t contextSize, const context_vtbl_t *vtbl) DECLSPEC_HIDDEN;
+context_t *Context_CreateDataContext(size_t contextSize, const context_vtbl_t *vtbl, struct WINE_CRYPTCERTSTORE*) DECLSPEC_HIDDEN;
 
-/* Creates a new link context with extra bytes.  The context refers to linked
+/* Creates a new link context.  The context refers to linked
  * rather than owning its own properties.  If addRef is TRUE (which ordinarily
  * it should be) linked is addref'd.
  * Free with Context_Release.
  */
-context_t *Context_CreateLinkContext(unsigned contextSize, context_t *linked, unsigned extra) DECLSPEC_HIDDEN;
-
-/* Returns a pointer to the extra bytes allocated with context, which must be
- * a link context.
- */
-void *Context_GetExtra(const void *context, size_t contextSize) DECLSPEC_HIDDEN;
-
-/* Gets the context linked to by context, which must be a link context. */
-void *Context_GetLinkedContext(void*) DECLSPEC_HIDDEN;
+context_t *Context_CreateLinkContext(unsigned contextSize, context_t *linked, struct WINE_CRYPTCERTSTORE*) DECLSPEC_HIDDEN;
 
 /* Copies properties from fromContext to toContext. */
 void Context_CopyProperties(const void *to, const void *from) DECLSPEC_HIDDEN;
 
-/* Returns context's properties, or the linked context's properties if context
- * is a link context.
- */
-CONTEXT_PROPERTY_LIST *Context_GetProperties(const void *context) DECLSPEC_HIDDEN;
-
 void Context_AddRef(context_t*) DECLSPEC_HIDDEN;
-
-/* Decrements context's ref count.  If context is a link context, releases its
- * linked context as well.
- * If a data context has its ref count reach 0, calls dataContextFree on it.
- * Returns FALSE if the reference count is <= 0 when called.
- */
-BOOL Context_Release(context_t *context) DECLSPEC_HIDDEN;
+void Context_Release(context_t *context) DECLSPEC_HIDDEN;
+void Context_Free(context_t*) DECLSPEC_HIDDEN;
 
 /**
  *  Context property list functions
@@ -446,26 +429,6 @@ void ContextPropertyList_Copy(CONTEXT_PROPERTY_LIST *to,
  CONTEXT_PROPERTY_LIST *from) DECLSPEC_HIDDEN;
 
 void ContextPropertyList_Free(CONTEXT_PROPERTY_LIST *list) DECLSPEC_HIDDEN;
-
-/**
- *  Context list functions.  A context list is a simple list of link contexts.
- */
-struct ContextList;
-
-struct ContextList *ContextList_Create(
- const WINE_CONTEXT_INTERFACE *contextInterface, size_t contextSize) DECLSPEC_HIDDEN;
-
-void *ContextList_Add(struct ContextList *list, void *toLink, void *toReplace) DECLSPEC_HIDDEN;
-
-void *ContextList_Enum(struct ContextList *list, void *pPrev) DECLSPEC_HIDDEN;
-
-/* Removes a context from the list.  Returns TRUE if the context was removed,
- * or FALSE if not.  (The context may have been duplicated, so subsequent
- * removes have no effect.)
- */
-BOOL ContextList_Remove(struct ContextList *list, void *context) DECLSPEC_HIDDEN;
-
-void ContextList_Free(struct ContextList *list) DECLSPEC_HIDDEN;
 
 extern WINECRYPT_CERTSTORE empty_store;
 void init_empty_store(void) DECLSPEC_HIDDEN;
