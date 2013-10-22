@@ -303,7 +303,12 @@ static int job_signaled( struct object *obj, struct wait_queue_entry *entry )
 
 static int job_breakaway_ok( struct job *job )
 {
-    return (job->limit_flags & (JOB_OBJECT_LIMIT_BREAKAWAY_OK | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK)) ? 1 : 0;
+    return (job->limit_flags & (JOB_OBJECT_LIMIT_BREAKAWAY_OK)) ? 1 : 0;
+}
+
+static int job_silent_breakaway( struct job *job )
+{
+    return (job->limit_flags & (JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK)) ? 1 : 0;
 }
 
 struct ptid_entry
@@ -1085,7 +1090,7 @@ DECL_HANDLER(new_process)
         return;
     }
 
-    if (parent->job)
+    if (parent->job && !job_silent_breakaway(parent->job))
     {
         if(!(req->create_flags & CREATE_BREAKAWAY_FROM_JOB))
         {
