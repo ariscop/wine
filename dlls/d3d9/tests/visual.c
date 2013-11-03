@@ -46,14 +46,14 @@ struct vec4
 
 static HWND create_window(void)
 {
-    WNDCLASS wc = {0};
+    WNDCLASSA wc = {0};
     HWND ret;
-    wc.lpfnWndProc = DefWindowProc;
+    wc.lpfnWndProc = DefWindowProcA;
     wc.lpszClassName = "d3d9_test_wc";
-    RegisterClass(&wc);
+    RegisterClassA(&wc);
 
-    ret = CreateWindow("d3d9_test_wc", "d3d9_test",
-                        WS_SYSMENU | WS_POPUP , 0, 0, 640, 480, 0, 0, 0, 0);
+    ret = CreateWindowA("d3d9_test_wc", "d3d9_test", WS_SYSMENU | WS_POPUP,
+            0, 0, 640, 480, 0, 0, 0, 0);
     ShowWindow(ret, SW_SHOW);
     return ret;
 }
@@ -168,12 +168,35 @@ out:
     return ret;
 }
 
+static IDirect3DDevice9 *create_device(IDirect3D9 *d3d9)
+{
+    D3DPRESENT_PARAMETERS present_parameters = {0};
+    IDirect3DDevice9 *device;
+    HRESULT hr;
+
+    present_parameters.Windowed = TRUE;
+    present_parameters.hDeviceWindow = create_window();
+    present_parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+    present_parameters.BackBufferWidth = 640;
+    present_parameters.BackBufferHeight = 480;
+    present_parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+    present_parameters.EnableAutoDepthStencil = TRUE;
+    present_parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+
+    hr = IDirect3D9_CreateDevice(d3d9, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
+            present_parameters.hDeviceWindow, D3DCREATE_HARDWARE_VERTEXPROCESSING, &present_parameters, &device);
+    ok(hr == D3D_OK || hr == D3DERR_NOTAVAILABLE || hr == D3DERR_INVALIDCALL,
+            "Failed to create a device, hr %#x.\n", hr);
+    if (FAILED(hr))
+        DestroyWindow(present_parameters.hDeviceWindow);
+
+    return device;
+}
+
 static IDirect3DDevice9 *init_d3d9(void)
 {
     IDirect3D9 * (__stdcall * d3d9_create)(UINT SDKVersion) = 0;
     IDirect3D9 *d3d9_ptr = 0;
-    IDirect3DDevice9 *device_ptr = 0;
-    D3DPRESENT_PARAMETERS present_parameters;
     HRESULT hr;
     D3DADAPTER_IDENTIFIER9 identifier;
 
@@ -188,16 +211,6 @@ static IDirect3DDevice9 *init_d3d9(void)
         return NULL;
     }
 
-    ZeroMemory(&present_parameters, sizeof(present_parameters));
-    present_parameters.Windowed = TRUE;
-    present_parameters.hDeviceWindow = create_window();
-    present_parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
-    present_parameters.BackBufferWidth = 640;
-    present_parameters.BackBufferHeight = 480;
-    present_parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
-    present_parameters.EnableAutoDepthStencil = TRUE;
-    present_parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
-
     memset(&identifier, 0, sizeof(identifier));
     hr = IDirect3D9_GetAdapterIdentifier(d3d9_ptr, 0, 0, &identifier);
     ok(hr == D3D_OK, "Failed to get adapter identifier description\n");
@@ -210,12 +223,7 @@ static IDirect3DDevice9 *init_d3d9(void)
           HIWORD(U(identifier.DriverVersion).HighPart), LOWORD(U(identifier.DriverVersion).HighPart),
           HIWORD(U(identifier.DriverVersion).LowPart), LOWORD(U(identifier.DriverVersion).LowPart));
 
-    hr = IDirect3D9_CreateDevice(d3d9_ptr, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
-            present_parameters.hDeviceWindow, D3DCREATE_HARDWARE_VERTEXPROCESSING, &present_parameters, &device_ptr);
-    ok(hr == D3D_OK || hr == D3DERR_NOTAVAILABLE || hr == D3DERR_INVALIDCALL,
-            "Failed to create a device, hr %#x.\n", hr);
-
-    return device_ptr;
+    return create_device(d3d9_ptr);
 }
 
 static void cleanup_device(IDirect3DDevice9 *device)
@@ -5983,37 +5991,31 @@ static void cnd_test(IDirect3DDevice9 *device)
     color = getPixelColor(device, 158, 358);
     ok(color == 0x00ffffff, "pixel 158, 358 has color %08x, expected 0x00ffffff\n", color);
     color = getPixelColor(device, 162, 358);
-    ok( (((color & 0x00ff0000) >> 16) <= 0x01) && (((color & 0x0000ff00) >> 8) <= 0x01) && ((color & 0x000000ff) <= 0x01),
-        "pixel 162, 358 has color %08x, expected 0x00000000\n", color);
+    ok(color_match(color, 0x00000000, 1), "pixel 162, 358 has color 0x%08x, expected 0x00000000.\n", color);
     color = getPixelColor(device, 158, 362);
     ok(color == 0x00ffffff, "pixel 158, 362 has color %08x, expected 0x00ffffff\n", color);
     color = getPixelColor(device, 162, 362);
-    ok( (((color & 0x00ff0000) >> 16) <= 0x01) && (((color & 0x0000ff00) >> 8) <= 0x01) && ((color & 0x000000ff) <= 0x01),
-        "pixel 162, 362 has color %08x, expected 0x00000000\n", color);
+    ok(color_match(color, 0x00000000, 1), "pixel 162, 362 has color 0x%08x, expected 0x00000000.\n", color);
 
     /* 1.2 shader */
     color = getPixelColor(device, 478, 358);
     ok(color == 0x00ffffff, "pixel 478, 358 has color %08x, expected 0x00ffffff\n", color);
     color = getPixelColor(device, 482, 358);
-    ok( (((color & 0x00ff0000) >> 16) <= 0x01) && (((color & 0x0000ff00) >> 8) <= 0x01) && ((color & 0x000000ff) <= 0x01),
-        "pixel 482, 358 has color %08x, expected 0x00000000\n", color);
+    ok(color_match(color, 0x00000000, 1), "pixel 482, 358 has color 0x%08x, expected 0x00000000.\n", color);
     color = getPixelColor(device, 478, 362);
     ok(color == 0x00ffffff, "pixel 478, 362 has color %08x, expected 0x00ffffff\n", color);
     color = getPixelColor(device, 482, 362);
-    ok( (((color & 0x00ff0000) >> 16) <= 0x01) && (((color & 0x0000ff00) >> 8) <= 0x01) && ((color & 0x000000ff) <= 0x01),
-        "pixel 482, 362 has color %08x, expected 0x00000000\n", color);
+    ok(color_match(color, 0x00000000, 1), "pixel 482, 362 has color 0x%08x, expected 0x00000000.\n", color);
 
     /* 1.3 shader */
     color = getPixelColor(device, 478, 118);
     ok(color == 0x00ffffff, "pixel 478, 118 has color %08x, expected 0x00ffffff\n", color);
     color = getPixelColor(device, 482, 118);
-    ok( (((color & 0x00ff0000) >> 16) <= 0x01) && (((color & 0x0000ff00) >> 8) <= 0x01) && ((color & 0x000000ff) <= 0x01),
-        "pixel 482, 118 has color %08x, expected 0x00000000\n", color);
+    ok(color_match(color, 0x00000000, 1), "pixel 482, 118 has color 0x%08x, expected 0x00000000.\n", color);
     color = getPixelColor(device, 478, 122);
     ok(color == 0x00ffffff, "pixel 478, 122 has color %08x, expected 0x00ffffff\n", color);
     color = getPixelColor(device, 482, 122);
-    ok( (((color & 0x00ff0000) >> 16) <= 0x01) && (((color & 0x0000ff00) >> 8) <= 0x01) && ((color & 0x000000ff) <= 0x01),
-        "pixel 482, 122 has color %08x, expected 0x00000000\n", color);
+    ok(color_match(color, 0x00000000, 1), "pixel 482, 122 has color 0x%08x, expected 0x00000000.\n", color);
 
     hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
     ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
@@ -6279,8 +6281,8 @@ static void nested_loop_test(IDirect3DDevice9 *device)
     }
 
     color = getPixelColor(device, 360, 240);
-    ok(color == 0x007f0000 || color == 0x00800000 || color == 0x00810000,
-       "Nested loop test returned color 0x%08x, expected 0x00800000\n", color);
+    ok(color_match(color, 0x00800000, 1),
+            "Nested loop test returned color 0x%08x, expected 0x00800000.\n", color);
 
     hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
     ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
@@ -6292,15 +6294,6 @@ static void nested_loop_test(IDirect3DDevice9 *device)
     IDirect3DPixelShader9_Release(shader);
     IDirect3DVertexShader9_Release(vshader);
 }
-
-struct varying_test_struct
-{
-    const DWORD             *shader_code;
-    IDirect3DPixelShader9   *shader;
-    DWORD                   color, color_rhw;
-    const char              *name;
-    BOOL                    todo, todo_rhw;
-};
 
 struct hugeVertex
 {
@@ -6394,18 +6387,25 @@ static void pretransformed_varying_test(IDirect3DDevice9 *device)
     };
     /* sample: fails */
 
-    struct varying_test_struct tests[] = {
-       {blendweight_code,       NULL,       0x00000000,     0x00191919,     "blendweight"   ,   FALSE,  TRUE  },
-       {blendindices_code,      NULL,       0x00000000,     0x00000000,     "blendindices"  ,   FALSE,  FALSE },
-       {normal_code,            NULL,       0x00000000,     0x004c4c4c,     "normal"        ,   FALSE,  TRUE  },
-       /* Why does dx not forward the texcoord? */
-       {texcoord0_code,         NULL,       0x00000000,     0x00808c8c,     "texcoord0"     ,   FALSE,  FALSE },
-       {tangent_code,           NULL,       0x00000000,     0x00999999,     "tangent"       ,   FALSE,  TRUE  },
-       {binormal_code,          NULL,       0x00000000,     0x00b2b2b2,     "binormal"      ,   FALSE,  TRUE  },
-       {color_code,             NULL,       0x00e6e6e6,     0x00e6e6e6,     "color"         ,   FALSE,  FALSE },
-       {fog_code,               NULL,       0x00000000,     0x00666666,     "fog"           ,   FALSE,  TRUE  },
-       {depth_code,             NULL,       0x00000000,     0x00cccccc,     "depth"         ,   FALSE,  TRUE  },
-       {specular_code,          NULL,       0x004488ff,     0x004488ff,     "specular"      ,   FALSE,  FALSE }
+    static const struct
+    {
+        const char *name;
+        const DWORD *shader_code;
+        DWORD color;
+        BOOL todo;
+    }
+    tests[] =
+    {
+        {"blendweight",     blendweight_code,   0x00191919, TRUE },
+        {"blendindices",    blendindices_code,  0x00333333, TRUE },
+        {"normal",          normal_code,        0x004c4c4c, TRUE },
+        {"texcoord0",       texcoord0_code,     0x00808c8c, FALSE},
+        {"tangent",         tangent_code,       0x00999999, TRUE },
+        {"binormal",        binormal_code,      0x00b2b2b2, TRUE },
+        {"color",           color_code,         0x00e6e6e6, FALSE},
+        {"fog",             fog_code,           0x00666666, TRUE },
+        {"depth",           depth_code,         0x00cccccc, TRUE },
+        {"specular",        specular_code,      0x004488ff, FALSE},
     };
     /* Declare a monster vertex type :-) */
     static const D3DVERTEXELEMENT9 decl_elements[] = {
@@ -6480,7 +6480,7 @@ static void pretransformed_varying_test(IDirect3DDevice9 *device)
     IDirect3DVertexDeclaration9 *decl;
     HRESULT hr;
     unsigned int i;
-    DWORD color, r, g, b, r_e, g_e, b_e;
+    DWORD color;
 
     memcpy(data2, data, sizeof(data2));
     data2[0].pos_x = 0;     data2[0].pos_y = 0;
@@ -6493,21 +6493,19 @@ static void pretransformed_varying_test(IDirect3DDevice9 *device)
     hr = IDirect3DDevice9_SetVertexDeclaration(device, decl);
     ok(hr == D3D_OK, "IDirect3DDevice9_SetVertexDeclaration returned %08x\n", hr);
 
-    for(i = 0; i < sizeof(tests) / sizeof(tests[0]); i++)
-    {
-        hr = IDirect3DDevice9_CreatePixelShader(device, tests[i].shader_code, &tests[i].shader);
-        ok(hr == D3D_OK, "IDirect3DDevice9_CreatePixelShader failed for shader %s, hr = %08x\n",
-           tests[i].name, hr);
-    }
-
     hr = IDirect3DDevice9_SetVertexDeclaration(device, decl);
     ok(hr == D3D_OK, "IDirect3DDevice9_SetVertexDeclaration returned %08x\n", hr);
-    for(i = 0; i < sizeof(tests) / sizeof(tests[0]); i++)
+    for (i = 0; i < sizeof(tests) / sizeof(*tests); ++i)
     {
+        IDirect3DPixelShader9 *shader;
+
         hr = IDirect3DDevice9_Clear(device, 0, NULL, D3DCLEAR_TARGET, 0xffffffff, 0.0, 0);
         ok(hr == D3D_OK, "IDirect3DDevice9_Clear returned %08x\n", hr);
 
-        hr = IDirect3DDevice9_SetPixelShader(device, tests[i].shader);
+        hr = IDirect3DDevice9_CreatePixelShader(device, tests[i].shader_code, &shader);
+        ok(SUCCEEDED(hr), "Failed to create pixel shader for test %s, hr %#x.\n", tests[i].name, hr);
+
+        hr = IDirect3DDevice9_SetPixelShader(device, shader);
         ok(hr == D3D_OK, "IDirect3DDevice9_SetPixelShader returned %08x\n", hr);
 
         hr = IDirect3DDevice9_BeginScene(device);
@@ -6520,34 +6518,26 @@ static void pretransformed_varying_test(IDirect3DDevice9 *device)
             ok(hr == D3D_OK, "IDirect3DDevice9_EndScene returned %08x\n", hr);
         }
 
+        /* This isn't a weekend's job to fix, ignore the problem for now.
+         * Needs a replacement pipeline. */
         color = getPixelColor(device, 360, 240);
-        r = color & 0x00ff0000 >> 16;
-        g = color & 0x0000ff00 >>  8;
-        b = color & 0x000000ff;
-        r_e = tests[i].color_rhw & 0x00ff0000 >> 16;
-        g_e = tests[i].color_rhw & 0x0000ff00 >>  8;
-        b_e = tests[i].color_rhw & 0x000000ff;
+        if (tests[i].todo)
+            todo_wine ok(color_match(color, tests[i].color, 1)
+                    || broken(color_match(color, 0x00000000, 1)
+                    && tests[i].shader_code == blendindices_code),
+                    "Test %s returned color 0x%08x, expected 0x%08x (todo).\n",
+                    tests[i].name, color, tests[i].color);
+        else
+            ok(color_match(color, tests[i].color, 1),
+                    "Test %s returned color 0x%08x, expected 0x%08x.\n",
+                    tests[i].name, color, tests[i].color);
 
         hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
         ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
 
-        if(tests[i].todo_rhw) {
-            /* This isn't a weekend's job to fix, ignore the problem for now. Needs a replacement
-             * pipeline
-             */
-            todo_wine ok(abs(r - r_e) <= 1 && abs(g - g_e) <= 1 && abs(b - b_e) <= 1,
-                         "Test %s returned color 0x%08x, expected 0x%08x(todo)\n",
-                         tests[i].name, color, tests[i].color_rhw);
-        } else {
-            ok(abs(r - r_e) <= 1 && abs(g - g_e) <= 1 && abs(b - b_e) <= 1,
-               "Test %s returned color 0x%08x, expected 0x%08x\n",
-               tests[i].name, color, tests[i].color_rhw);
-        }
-    }
-
-    for(i = 0; i < sizeof(tests) / sizeof(tests[0]); i++)
-    {
-        IDirect3DPixelShader9_Release(tests[i].shader);
+        hr = IDirect3DDevice9_SetPixelShader(device, NULL);
+        ok(SUCCEEDED(hr), "Failed to set pixel shader for test %s, hr %#x.\n", tests[i].name, hr);
+        IDirect3DPixelShader9_Release(shader);
     }
 
     IDirect3DVertexDeclaration9_Release(decl);
@@ -7248,7 +7238,7 @@ static void srgbtexture_test(IDirect3DDevice9 *device)
     ok(hr == D3D_OK, "IDirect3DDevice9_SetSamplerState failed with %08x\n", hr);
 
     color = getPixelColor(device, 320, 240);
-    ok(color == 0x00363636 || color == 0x00373737, "srgb quad has color %08x, expected 0x00363636\n", color);
+    ok(color_match(color, 0x00363636, 1), "sRGB quad has color 0x%08x, expected 0x00363636.\n", color);
 
     hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
     ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
@@ -8741,56 +8731,63 @@ cleanup:
     IDirect3DVertexDeclaration9_Release(vertex_declaration);
 }
 
-static void stencil_cull_test(IDirect3DDevice9 *device) {
+static void stencil_cull_test(IDirect3D9 *d3d9)
+{
+    IDirect3DDevice9 *device;
+    D3DCAPS9 caps;
     HRESULT hr;
-    IDirect3DSurface9 *depthstencil = NULL;
-    D3DSURFACE_DESC desc;
-    float quad1[] = {
+    static const float quad1[] =
+    {
         -1.0,   -1.0,   0.1,
          0.0,   -1.0,   0.1,
         -1.0,    0.0,   0.1,
          0.0,    0.0,   0.1,
     };
-    float quad2[] = {
+    static const float quad2[] =
+    {
          0.0,   -1.0,   0.1,
          1.0,   -1.0,   0.1,
          0.0,    0.0,   0.1,
          1.0,    0.0,   0.1,
     };
-    float quad3[] = {
+    static const float quad3[] =
+    {
         0.0,    0.0,   0.1,
         1.0,    0.0,   0.1,
         0.0,    1.0,   0.1,
         1.0,    1.0,   0.1,
     };
-    float quad4[] = {
+    static const float quad4[] =
+    {
         -1.0,    0.0,   0.1,
          0.0,    0.0,   0.1,
         -1.0,    1.0,   0.1,
          0.0,    1.0,   0.1,
     };
-    struct vertex painter[] = {
+    struct vertex painter[] =
+    {
        {-1.0,   -1.0,   0.0,    0x00000000},
        { 1.0,   -1.0,   0.0,    0x00000000},
        {-1.0,    1.0,   0.0,    0x00000000},
        { 1.0,    1.0,   0.0,    0x00000000},
     };
-    WORD indices_cw[]  = {0, 1, 3};
-    WORD indices_ccw[] = {0, 2, 3};
+    static const WORD indices_cw[]  = {0, 1, 3};
+    static const WORD indices_ccw[] = {0, 2, 3};
     unsigned int i;
     DWORD color;
 
-    IDirect3DDevice9_GetDepthStencilSurface(device, &depthstencil);
-    if(depthstencil == NULL) {
-        skip("No depth stencil buffer\n");
+    device = create_device(d3d9);
+    if (!device)
+    {
+        skip("Cannot create a device with a D24S8 stencil buffer.\n");
         return;
     }
-    hr = IDirect3DSurface9_GetDesc(depthstencil, &desc);
-    ok(hr == D3D_OK, "IDirect3DSurface9_GetDesc failed with %08x\n", hr);
-    IDirect3DSurface9_Release(depthstencil);
-    if(desc.Format != D3DFMT_D24S8 && desc.Format != D3DFMT_D24X4S4) {
-        skip("No 4 or 8 bit stencil surface\n");
-        return;
+    hr = IDirect3DDevice9_GetDeviceCaps(device, &caps);
+    ok(SUCCEEDED(hr), "Failed to get caps, hr %#x.\n", hr);
+    if (!(caps.StencilCaps & D3DSTENCILCAPS_TWOSIDED))
+    {
+        skip("No two sided stencil support\n");
+        goto cleanup;
     }
 
     hr = IDirect3DDevice9_Clear(device, 0, NULL, D3DCLEAR_TARGET | D3DCLEAR_STENCIL, 0x00ff0000, 0.0, 0x8);
@@ -8798,6 +8795,10 @@ static void stencil_cull_test(IDirect3DDevice9 *device) {
     hr = IDirect3DDevice9_SetFVF(device, D3DFVF_XYZ);
     ok(SUCCEEDED(hr), "Failed to set FVF,hr %#x.\n", hr);
 
+    hr = IDirect3DDevice9_SetRenderState(device, D3DRS_ZENABLE, D3DZB_FALSE);
+    ok(hr == D3D_OK, "Failed to disable Z test, %#x.\n", hr);
+    hr = IDirect3DDevice9_SetRenderState(device, D3DRS_LIGHTING, FALSE);
+    ok(hr == D3D_OK, "Failed to disable lighting, %#x.\n", hr);
     hr = IDirect3DDevice9_SetRenderState(device, D3DRS_STENCILFAIL, D3DSTENCILOP_INCR);
     ok(hr == D3D_OK, "IDirect3DDevice9_SetRenderState returned %08x\n", hr);
     hr = IDirect3DDevice9_SetRenderState(device, D3DRS_STENCILZFAIL, D3DSTENCILOP_DECR);
@@ -8927,6 +8928,9 @@ static void stencil_cull_test(IDirect3DDevice9 *device) {
 
     hr = IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
     ok(hr == D3D_OK, "IDirect3DDevice9_Present failed with %08x\n", hr);
+
+cleanup:
+    cleanup_device(device);
 }
 
 static void vpos_register_test(IDirect3DDevice9 *device)
@@ -9624,7 +9628,6 @@ static void pixelshader_blending_test(IDirect3DDevice9 *device)
     IDirect3DSurface9 *backbuffer = NULL, *offscreen = NULL;
     IDirect3D9 *d3d = NULL;
     DWORD color;
-    DWORD r0, g0, b0, r1, g1, b1;
     int fmt_index;
 
     static const float quad[][5] = {
@@ -9746,27 +9749,26 @@ static void pixelshader_blending_test(IDirect3DDevice9 *device)
             IDirect3DDevice9_EndScene(device);
         }
 
-        if(IDirect3D9_CheckDeviceFormat(d3d, 0, D3DDEVTYPE_HAL, D3DFMT_X8R8G8B8, D3DUSAGE_QUERY_POSTPIXELSHADER_BLENDING, D3DRTYPE_TEXTURE, fmt) == D3D_OK) {
-            /* Compare the color of the center quad with our expectation */
+        if (IDirect3D9_CheckDeviceFormat(d3d, 0, D3DDEVTYPE_HAL, D3DFMT_X8R8G8B8,
+                D3DUSAGE_QUERY_POSTPIXELSHADER_BLENDING, D3DRTYPE_TEXTURE, fmt) == D3D_OK)
+        {
+            /* Compare the color of the center quad with our expectation. */
             color = getPixelColor(device, 320, 240);
-            r0 = (color & 0x00ff0000) >> 16;
-            g0 = (color & 0x0000ff00) >>  8;
-            b0 = (color & 0x000000ff) >>  0;
-
-            r1 = (test_formats[fmt_index].resultColorBlending & 0x00ff0000) >> 16;
-            g1 = (test_formats[fmt_index].resultColorBlending & 0x0000ff00) >>  8;
-            b1 = (test_formats[fmt_index].resultColorBlending & 0x000000ff) >>  0;
-
-            ok(r0 >= max(r1, 1) - 1 && r0 <= r1 + 1 &&
-               g0 >= max(g1, 1) - 1 && g0 <= g1 + 1 &&
-               b0 >= max(b1, 1) - 1 && b0 <= b1 + 1,
-               "Offscreen failed for %s: Got color %#08x, expected %#08x.\n", test_formats[fmt_index].fmtName, color, test_formats[fmt_index].resultColorBlending);
-        } else {
-            /* No pixel shader blending is supported so expect garbage. The type of 'garbage' depends on the driver version and OS.
-             * E.g. on G16R16 ati reports (on old r9600 drivers) 0x00ffffff and on modern ones 0x002010ff which is also what Nvidia
-             * reports. On Vista Nvidia seems to report 0x00ffffff on Geforce7 cards. */
+            ok(color_match(color, test_formats[fmt_index].resultColorBlending, 1),
+                    "Offscreen failed for %s: Got color 0x%08x, expected 0x%08x.\n",
+                    test_formats[fmt_index].fmtName, color, test_formats[fmt_index].resultColorBlending);
+        }
+        else
+        {
+            /* No pixel shader blending is supported so expect garbage. The
+             * type of 'garbage' depends on the driver version and OS. E.g. on
+             * G16R16 ATI reports (on old r9600 drivers) 0x00ffffff and on
+             * modern ones 0x002010ff which is also what NVIDIA reports. On
+             * Vista NVIDIA seems to report 0x00ffffff on Geforce7 cards. */
             color = getPixelColor(device, 320, 240);
-            ok((color == 0x00ffffff) || (color == test_formats[fmt_index].resultColorNoBlending), "Offscreen failed for %s: expected no color blending but received it anyway.\n", test_formats[fmt_index].fmtName);
+            ok((color == 0x00ffffff) || (color == test_formats[fmt_index].resultColorNoBlending),
+                    "Offscreen failed for %s: Got unexpected color 0x%08x, expected no color blending.\n",
+                    test_formats[fmt_index].fmtName, color);
         }
         IDirect3DDevice9_Present(device, NULL, NULL, NULL, NULL);
 
@@ -14872,11 +14874,6 @@ START_TEST(visual)
     fixed_function_decl_test(device_ptr);
     conditional_np2_repeat_test(device_ptr);
     fixed_function_bumpmap_test(device_ptr);
-    if(caps.StencilCaps & D3DSTENCILCAPS_TWOSIDED) {
-        stencil_cull_test(device_ptr);
-    } else {
-        skip("No two sided stencil support\n");
-    }
     pointsize_test(device_ptr);
     tssargtemp_test(device_ptr);
     np2_stretch_rect_test(device_ptr);
@@ -14970,6 +14967,7 @@ START_TEST(visual)
 
     multisampled_depth_buffer_test(d3d9);
     resz_test(d3d9);
+    stencil_cull_test(d3d9);
 
     IDirect3D9_Release(d3d9);
 

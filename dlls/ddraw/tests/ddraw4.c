@@ -96,8 +96,8 @@ static DWORD WINAPI create_window_thread_proc(void *param)
     {
         MSG msg;
 
-        while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
-            DispatchMessage(&msg);
+        while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE))
+            DispatchMessageA(&msg);
         res = WaitForSingleObject(p->destroy_window, 100);
         if (res == WAIT_OBJECT_0)
             break;
@@ -117,9 +117,9 @@ static void create_window_thread(struct create_window_thread_param *p)
 {
     DWORD res, tid;
 
-    p->window_created = CreateEvent(NULL, FALSE, FALSE, NULL);
+    p->window_created = CreateEventA(NULL, FALSE, FALSE, NULL);
     ok(!!p->window_created, "CreateEvent failed, last error %#x.\n", GetLastError());
-    p->destroy_window = CreateEvent(NULL, FALSE, FALSE, NULL);
+    p->destroy_window = CreateEventA(NULL, FALSE, FALSE, NULL);
     ok(!!p->destroy_window, "CreateEvent failed, last error %#x.\n", GetLastError());
     p->thread = CreateThread(NULL, 0, create_window_thread_proc, p, 0, &tid);
     ok(!!p->thread, "Failed to create thread, last error %#x.\n", GetLastError());
@@ -3813,10 +3813,16 @@ static void test_texturemanage(void)
     {
         {DDSCAPS_SYSTEMMEMORY | DDSCAPS_TEXTURE, DDSCAPS2_TEXTUREMANAGE, DDERR_INVALIDCAPS,
                 ~0U, ~0U},
+        {DDSCAPS_SYSTEMMEMORY | DDSCAPS_TEXTURE, DDSCAPS2_D3DTEXTUREMANAGE, DDERR_INVALIDCAPS,
+                ~0U, ~0U},
         {DDSCAPS_VIDEOMEMORY | DDSCAPS_TEXTURE, DDSCAPS2_TEXTUREMANAGE, DDERR_INVALIDCAPS,
+                ~0U, ~0U},
+        {DDSCAPS_VIDEOMEMORY | DDSCAPS_TEXTURE, DDSCAPS2_D3DTEXTUREMANAGE, DDERR_INVALIDCAPS,
                 ~0U, ~0U},
         {DDSCAPS_TEXTURE, DDSCAPS2_TEXTUREMANAGE, DD_OK,
                 DDSCAPS_SYSTEMMEMORY | DDSCAPS_TEXTURE, DDSCAPS2_TEXTUREMANAGE},
+        {DDSCAPS_TEXTURE, DDSCAPS2_D3DTEXTUREMANAGE, DD_OK,
+                DDSCAPS_SYSTEMMEMORY | DDSCAPS_TEXTURE, DDSCAPS2_D3DTEXTUREMANAGE},
         {DDSCAPS_VIDEOMEMORY | DDSCAPS_TEXTURE, 0, DD_OK,
                 DDSCAPS_VIDEOMEMORY | DDSCAPS_TEXTURE | DDSCAPS_LOCALVIDMEM, 0},
         {DDSCAPS_SYSTEMMEMORY | DDSCAPS_TEXTURE, 0, DD_OK,
@@ -3824,9 +3830,15 @@ static void test_texturemanage(void)
 
         {0, DDSCAPS2_TEXTUREMANAGE, DDERR_INVALIDCAPS,
                 ~0U, ~0U},
+        {0, DDSCAPS2_D3DTEXTUREMANAGE, DDERR_INVALIDCAPS,
+                ~0U, ~0U},
         {DDSCAPS_SYSTEMMEMORY, DDSCAPS2_TEXTUREMANAGE, DDERR_INVALIDCAPS,
                 ~0U, ~0U},
+        {DDSCAPS_SYSTEMMEMORY, DDSCAPS2_D3DTEXTUREMANAGE, DDERR_INVALIDCAPS,
+                ~0U, ~0U},
         {DDSCAPS_VIDEOMEMORY, DDSCAPS2_TEXTUREMANAGE, DDERR_INVALIDCAPS,
+                ~0U, ~0U},
+        {DDSCAPS_VIDEOMEMORY, DDSCAPS2_D3DTEXTUREMANAGE, DDERR_INVALIDCAPS,
                 ~0U, ~0U},
         {DDSCAPS_VIDEOMEMORY, 0, DD_OK,
                 DDSCAPS_LOCALVIDMEM | DDSCAPS_VIDEOMEMORY, 0},
@@ -4257,7 +4269,7 @@ static void test_rt_caps(void)
         DWORD caps_in;
         DWORD caps_out;
         HRESULT create_device_hr;
-        HRESULT set_rt_hr;
+        HRESULT set_rt_hr, alternative_set_rt_hr;
     }
     test_data[] =
     {
@@ -4267,11 +4279,13 @@ static void test_rt_caps(void)
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_3DDEVICE | DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM,
             D3D_OK,
             D3D_OK,
+            D3D_OK,
         },
         {
             NULL,
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_3DDEVICE,
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_3DDEVICE | DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM,
+            D3D_OK,
             D3D_OK,
             D3D_OK,
         },
@@ -4281,6 +4295,7 @@ static void test_rt_caps(void)
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
+            DDERR_INVALIDCAPS,
         },
         {
             NULL,
@@ -4288,11 +4303,13 @@ static void test_rt_caps(void)
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY | DDSCAPS_3DDEVICE,
             D3DERR_SURFACENOTINVIDMEM,
             D3D_OK,
+            D3D_OK,
         },
         {
             NULL,
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY,
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY,
+            DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
         },
@@ -4302,6 +4319,7 @@ static void test_rt_caps(void)
             DDSCAPS_3DDEVICE | DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM,
             D3D_OK,
             D3D_OK,
+            D3D_OK,
         },
         {
             NULL,
@@ -4309,11 +4327,13 @@ static void test_rt_caps(void)
             DDSCAPS_3DDEVICE | DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM,
             D3D_OK,
             D3D_OK,
+            D3D_OK,
         },
         {
             NULL,
             0,
             DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM,
+            DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
         },
@@ -4323,11 +4343,13 @@ static void test_rt_caps(void)
             DDSCAPS_SYSTEMMEMORY | DDSCAPS_3DDEVICE,
             D3DERR_SURFACENOTINVIDMEM,
             D3D_OK,
+            D3D_OK,
         },
         {
             NULL,
             DDSCAPS_SYSTEMMEMORY,
             DDSCAPS_SYSTEMMEMORY,
+            DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
         },
@@ -4337,12 +4359,14 @@ static void test_rt_caps(void)
             DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
+            DDERR_INVALIDCAPS,
         },
         {
             &p8_fmt,
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_3DDEVICE,
-            DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY | DDSCAPS_3DDEVICE,
+            ~0U /* AMD r200 */,
             DDERR_NOPALETTEATTACHED,
+            DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
         },
         {
@@ -4351,6 +4375,7 @@ static void test_rt_caps(void)
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
+            DDERR_INVALIDCAPS,
         },
         {
             &p8_fmt,
@@ -4358,11 +4383,13 @@ static void test_rt_caps(void)
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY | DDSCAPS_3DDEVICE,
             DDERR_NOPALETTEATTACHED,
             DDERR_INVALIDCAPS,
+            DDERR_INVALIDCAPS,
         },
         {
             &p8_fmt,
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY,
             DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY,
+            DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
         },
@@ -4372,6 +4399,7 @@ static void test_rt_caps(void)
             DDSCAPS_3DDEVICE | DDSCAPS_VIDEOMEMORY | DDSCAPS_ZBUFFER | DDSCAPS_LOCALVIDMEM,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDPIXELFORMAT,
+            D3D_OK /* r200 */,
         },
         {
             &z_fmt,
@@ -4379,11 +4407,13 @@ static void test_rt_caps(void)
             DDSCAPS_3DDEVICE | DDSCAPS_VIDEOMEMORY | DDSCAPS_ZBUFFER | DDSCAPS_LOCALVIDMEM,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDPIXELFORMAT,
+            D3D_OK /* r200 */,
         },
         {
             &z_fmt,
             DDSCAPS_ZBUFFER,
             DDSCAPS_VIDEOMEMORY | DDSCAPS_ZBUFFER | DDSCAPS_LOCALVIDMEM,
+            DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
         },
@@ -4393,11 +4423,13 @@ static void test_rt_caps(void)
             DDSCAPS_SYSTEMMEMORY | DDSCAPS_3DDEVICE | DDSCAPS_ZBUFFER,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDPIXELFORMAT,
+            D3D_OK /* r200 */,
         },
         {
             &z_fmt,
             DDSCAPS_SYSTEMMEMORY | DDSCAPS_ZBUFFER,
             DDSCAPS_SYSTEMMEMORY | DDSCAPS_ZBUFFER,
+            DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
             DDERR_INVALIDCAPS,
         },
@@ -4458,7 +4490,7 @@ static void test_rt_caps(void)
         surface_desc.dwSize = sizeof(surface_desc);
         hr = IDirectDrawSurface4_GetSurfaceDesc(surface, &surface_desc);
         ok(SUCCEEDED(hr), "Test %u: Failed to get surface desc, hr %#x.\n", i, hr);
-        ok(surface_desc.ddsCaps.dwCaps == test_data[i].caps_out,
+        ok(test_data[i].caps_out == ~0U || surface_desc.ddsCaps.dwCaps == test_data[i].caps_out,
                 "Test %u: Got unexpected caps %#x, expected %#x.\n",
                 i, surface_desc.ddsCaps.dwCaps, test_data[i].caps_out);
 
@@ -4472,7 +4504,10 @@ static void test_rt_caps(void)
                 hr = IDirectDrawSurface4_SetPalette(surface, palette);
                 ok(SUCCEEDED(hr), "Test %u: Failed to set palette, hr %#x.\n", i, hr);
                 hr = IDirect3D3_CreateDevice(d3d, &IID_IDirect3DHALDevice, surface, &device, NULL);
-                ok(hr == D3DERR_SURFACENOTINVIDMEM, "Test %u: Got unexpected hr %#x.\n", i, hr);
+                if (surface_desc.ddsCaps.dwCaps & DDSCAPS_VIDEOMEMORY)
+                    ok(hr == DDERR_INVALIDPIXELFORMAT, "Test %u: Got unexpected hr %#x.\n", i, hr);
+                else
+                    ok(hr == D3DERR_SURFACENOTINVIDMEM, "Test %u: Got unexpected hr %#x.\n", i, hr);
             }
             IDirectDrawSurface4_Release(surface);
 
@@ -4505,7 +4540,8 @@ static void test_rt_caps(void)
                 i, test_data[i].caps_in, hr);
 
         hr = IDirect3DDevice3_SetRenderTarget(device, rt, 0);
-        ok(hr == test_data[i].set_rt_hr, "Test %u: Got unexpected hr %#x, expected %#x.\n",
+        ok(hr == test_data[i].set_rt_hr || broken(hr == test_data[i].alternative_set_rt_hr),
+                "Test %u: Got unexpected hr %#x, expected %#x.\n",
                 i, hr, test_data[i].set_rt_hr);
         if (SUCCEEDED(hr) || hr == DDERR_INVALIDPIXELFORMAT)
             expected_rt = rt;
@@ -4530,6 +4566,254 @@ static void test_rt_caps(void)
 done:
     refcount = IDirectDraw4_Release(ddraw);
     ok(refcount == 0, "The ddraw object was not properly freed, refcount %u.\n", refcount);
+    DestroyWindow(window);
+}
+
+static void test_surface_lock(void)
+{
+    IDirectDraw4 *ddraw;
+    IDirect3D3 *d3d = NULL;
+    IDirectDrawSurface4 *surface;
+    HRESULT hr;
+    HWND window;
+    unsigned int i;
+    DDSURFACEDESC2 ddsd;
+    ULONG refcount;
+    DDPIXELFORMAT z_fmt;
+    static const struct
+    {
+        DWORD caps;
+        DWORD caps2;
+        const char *name;
+    }
+    tests[] =
+    {
+        {
+            DDSCAPS_OFFSCREENPLAIN | DDSCAPS_VIDEOMEMORY,
+            0,
+            "videomemory offscreenplain"
+        },
+        {
+            DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY,
+            0,
+            "systemmemory offscreenplain"
+        },
+        {
+            DDSCAPS_PRIMARYSURFACE,
+            0,
+            "primary"
+        },
+        {
+            DDSCAPS_TEXTURE | DDSCAPS_VIDEOMEMORY,
+            0,
+            "videomemory texture"
+        },
+        {
+            DDSCAPS_TEXTURE | DDSCAPS_VIDEOMEMORY,
+            DDSCAPS2_OPAQUE,
+            "opaque videomemory texture"
+        },
+        {
+            DDSCAPS_TEXTURE | DDSCAPS_SYSTEMMEMORY,
+            0,
+            "systemmemory texture"
+        },
+        {
+            DDSCAPS_TEXTURE,
+            DDSCAPS2_TEXTUREMANAGE,
+            "managed texture"
+        },
+        {
+            DDSCAPS_TEXTURE,
+            DDSCAPS2_D3DTEXTUREMANAGE,
+            "managed texture"
+        },
+        {
+            DDSCAPS_TEXTURE,
+            DDSCAPS2_TEXTUREMANAGE | DDSCAPS2_OPAQUE,
+            "opaque managed texture"
+        },
+        {
+            DDSCAPS_TEXTURE,
+            DDSCAPS2_D3DTEXTUREMANAGE | DDSCAPS2_OPAQUE,
+            "opaque managed texture"
+        },
+        {
+            DDSCAPS_OFFSCREENPLAIN | DDSCAPS_3DDEVICE,
+            0,
+            "render target"
+        },
+        {
+            DDSCAPS_ZBUFFER,
+            0,
+            "Z buffer"
+        },
+    };
+
+    if (!(ddraw = create_ddraw()))
+    {
+        skip("Failed to create ddraw object, skipping tests.\n");
+        return;
+    }
+
+    window = CreateWindowA("static", "ddraw_test", WS_OVERLAPPEDWINDOW,
+            0, 0, 640, 480, 0, 0, 0, 0);
+    hr = IDirectDraw4_SetCooperativeLevel(ddraw, window, DDSCL_NORMAL);
+    ok(SUCCEEDED(hr), "Failed to set cooperative level, hr %#x.\n", hr);
+
+    if (FAILED(hr = IDirectDraw4_QueryInterface(ddraw, &IID_IDirect3D3, (void **)&d3d)))
+    {
+        skip("D3D interface is not available, skipping test.\n");
+        goto done;
+    }
+
+    memset(&z_fmt, 0, sizeof(z_fmt));
+    hr = IDirect3D3_EnumZBufferFormats(d3d, &IID_IDirect3DHALDevice, enum_z_fmt, &z_fmt);
+    if (FAILED(hr) || !z_fmt.dwSize)
+    {
+        skip("No depth buffer formats available, skipping test.\n");
+        goto done;
+    }
+
+    for (i = 0; i < sizeof(tests) / sizeof(*tests); i++)
+    {
+        memset(&ddsd, 0, sizeof(ddsd)),
+        ddsd.dwSize = sizeof(ddsd);
+        ddsd.dwFlags = DDSD_CAPS;
+        if (!(tests[i].caps & DDSCAPS_PRIMARYSURFACE))
+        {
+            ddsd.dwFlags |= DDSD_WIDTH | DDSD_HEIGHT;
+            ddsd.dwWidth = 64;
+            ddsd.dwHeight = 64;
+        }
+        if (tests[i].caps & DDSCAPS_ZBUFFER)
+        {
+            ddsd.dwFlags |= DDSD_PIXELFORMAT;
+            U4(ddsd).ddpfPixelFormat = z_fmt;
+        }
+        ddsd.ddsCaps.dwCaps = tests[i].caps;
+        ddsd.ddsCaps.dwCaps2 = tests[i].caps2;
+
+        hr = IDirectDraw4_CreateSurface(ddraw, &ddsd, &surface, NULL);
+        ok(SUCCEEDED(hr), "Failed to create surface, type %s, hr %#x.\n", tests[i].name, hr);
+
+        memset(&ddsd, 0, sizeof(ddsd)),
+        ddsd.dwSize = sizeof(ddsd);
+        hr = IDirectDrawSurface4_Lock(surface, NULL, &ddsd, DDLOCK_WAIT, NULL);
+        ok(SUCCEEDED(hr), "Failed to lock surface, type %s, hr %#x.\n", tests[i].name, hr);
+        if (SUCCEEDED(hr))
+        {
+            hr = IDirectDrawSurface4_Unlock(surface, NULL);
+            ok(SUCCEEDED(hr), "Failed to unlock surface, type %s, hr %#x.\n", tests[i].name, hr);
+        }
+
+        IDirectDrawSurface4_Release(surface);
+    }
+
+done:
+    if (d3d)
+        IDirect3D3_Release(d3d);
+    refcount = IDirectDraw4_Release(ddraw);
+    ok(refcount == 0, "The ddraw object was not properly freed, refcount %u.\n", refcount);
+    DestroyWindow(window);
+}
+
+static void test_surface_discard(void)
+{
+    IDirect3DDevice3 *device;
+    IDirect3D3 *d3d;
+    IDirectDraw4 *ddraw;
+    HRESULT hr;
+    HWND window;
+    DDSURFACEDESC2 ddsd;
+    IDirectDrawSurface4 *surface, *target;
+    void *addr;
+    static const struct
+    {
+        DWORD caps, caps2;
+        BOOL discard;
+    }
+    tests[] =
+    {
+        {DDSCAPS_OFFSCREENPLAIN | DDSCAPS_VIDEOMEMORY, 0, TRUE},
+        {DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY, 0, FALSE},
+        {DDSCAPS_TEXTURE | DDSCAPS_VIDEOMEMORY, 0, TRUE},
+        {DDSCAPS_TEXTURE | DDSCAPS_SYSTEMMEMORY, 0, FALSE},
+        {DDSCAPS_TEXTURE, DDSCAPS2_TEXTUREMANAGE, FALSE},
+        {DDSCAPS_TEXTURE, DDSCAPS2_TEXTUREMANAGE | DDSCAPS2_HINTDYNAMIC, FALSE},
+        {DDSCAPS_TEXTURE, DDSCAPS2_D3DTEXTUREMANAGE, FALSE},
+        {DDSCAPS_TEXTURE, DDSCAPS2_D3DTEXTUREMANAGE | DDSCAPS2_HINTDYNAMIC, FALSE},
+    };
+    unsigned int i;
+
+    window = CreateWindowA("static", "ddraw_test", WS_OVERLAPPEDWINDOW,
+            0, 0, 640, 480, 0, 0, 0, 0);
+
+    if (!(device = create_device(window, DDSCL_NORMAL)))
+    {
+        skip("Failed to create a ddraw object, skipping test.\n");
+        DestroyWindow(window);
+        return;
+    }
+    hr = IDirect3DDevice3_GetDirect3D(device, &d3d);
+    ok(SUCCEEDED(hr), "Failed to get d3d interface, hr %#x.\n", hr);
+    hr = IDirect3D3_QueryInterface(d3d, &IID_IDirectDraw4, (void **)&ddraw);
+    ok(SUCCEEDED(hr), "Failed to get ddraw interface, hr %#x.\n", hr);
+    hr = IDirect3DDevice3_GetRenderTarget(device, &target);
+    ok(SUCCEEDED(hr), "Failed to get render target, hr %#x.\n", hr);
+
+    for (i = 0; i < sizeof(tests) / sizeof(*tests); i++)
+    {
+        BOOL discarded;
+
+        memset(&ddsd, 0, sizeof(ddsd));
+        ddsd.dwSize = sizeof(ddsd);
+        ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+        ddsd.ddsCaps.dwCaps = tests[i].caps;
+        ddsd.ddsCaps.dwCaps2 = tests[i].caps2;
+        ddsd.dwWidth = 64;
+        ddsd.dwHeight = 64;
+        hr = IDirectDraw4_CreateSurface(ddraw, &ddsd, &surface, NULL);
+        ok(SUCCEEDED(hr), "Failed to create offscreen surface, hr %#x, case %u.\n", hr, i);
+
+        memset(&ddsd, 0, sizeof(ddsd));
+        ddsd.dwSize = sizeof(ddsd);
+        hr = IDirectDrawSurface4_Lock(surface, NULL, &ddsd, 0, NULL);
+        ok(SUCCEEDED(hr), "Failed to lock surface, hr %#x.\n", hr);
+        addr = ddsd.lpSurface;
+        hr = IDirectDrawSurface4_Unlock(surface, NULL);
+        ok(SUCCEEDED(hr), "Failed to unlock surface, hr %#x.\n", hr);
+
+        memset(&ddsd, 0, sizeof(ddsd));
+        ddsd.dwSize = sizeof(ddsd);
+        hr = IDirectDrawSurface4_Lock(surface, NULL, &ddsd, DDLOCK_DISCARDCONTENTS, NULL);
+        ok(SUCCEEDED(hr), "Failed to lock surface, hr %#x.\n", hr);
+        discarded = ddsd.lpSurface != addr;
+        hr = IDirectDrawSurface4_Unlock(surface, NULL);
+        ok(SUCCEEDED(hr), "Failed to unlock surface, hr %#x.\n", hr);
+
+        hr = IDirectDrawSurface4_Blt(target, NULL, surface, NULL, DDBLT_WAIT, NULL);
+        ok(SUCCEEDED(hr), "Failed to blit, hr %#x.\n", hr);
+
+        memset(&ddsd, 0, sizeof(ddsd));
+        ddsd.dwSize = sizeof(ddsd);
+        hr = IDirectDrawSurface4_Lock(surface, NULL, &ddsd, DDLOCK_DISCARDCONTENTS, NULL);
+        ok(SUCCEEDED(hr), "Failed to lock surface, hr %#x.\n", hr);
+        discarded |= ddsd.lpSurface != addr;
+        hr = IDirectDrawSurface4_Unlock(surface, NULL);
+        ok(SUCCEEDED(hr), "Failed to unlock surface, hr %#x.\n", hr);
+
+        IDirectDrawSurface4_Release(surface);
+
+        /* Windows 7 reliably changes the address of surfaces that are discardable (Nvidia Kepler,
+         * AMD r500, evergreen). Windows XP, at least on AMD r200, does not. */
+        ok(!discarded || tests[i].discard, "Expected surface not to be discarded, case %u\n", i);
+    }
+
+    IDirectDrawSurface4_Release(target);
+    IDirectDraw4_Release(ddraw);
+    IDirect3D3_Release(d3d);
+    IDirect3DDevice3_Release(device);
     DestroyWindow(window);
 }
 
@@ -4567,4 +4851,6 @@ START_TEST(ddraw4)
     test_block_formats_creation();
     test_unsupported_formats();
     test_rt_caps();
+    test_surface_lock();
+    test_surface_discard();
 }

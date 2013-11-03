@@ -3120,6 +3120,8 @@ struct get_serial_info_request
 {
     struct request_header __header;
     obj_handle_t handle;
+    int          flags;
+    char __pad_20[4];
 };
 struct get_serial_info_reply
 {
@@ -3131,7 +3133,7 @@ struct get_serial_info_reply
     unsigned int writemult;
     unsigned int eventmask;
     unsigned int cookie;
-    char __pad_36[4];
+    unsigned int pending_write;
 };
 
 
@@ -3155,6 +3157,7 @@ struct set_serial_info_reply
 };
 #define SERIALINFO_SET_TIMEOUTS  0x01
 #define SERIALINFO_SET_MASK      0x02
+#define SERIALINFO_PENDING_WRITE 0x04
 
 
 
@@ -5916,6 +5919,6 @@ union generic_reply
     struct set_suspend_context_reply set_suspend_context_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 451
+#define SERVER_PROTOCOL_VERSION 452
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */
