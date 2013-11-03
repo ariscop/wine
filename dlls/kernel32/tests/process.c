@@ -64,11 +64,12 @@ static BOOL   (WINAPI *pVirtualFreeEx)(HANDLE, LPVOID, SIZE_T, DWORD);
 static BOOL   (WINAPI *pQueryFullProcessImageNameA)(HANDLE hProcess, DWORD dwFlags, LPSTR lpExeName, PDWORD lpdwSize);
 static BOOL   (WINAPI *pQueryFullProcessImageNameW)(HANDLE hProcess, DWORD dwFlags, LPWSTR lpExeName, PDWORD lpdwSize);
 static DWORD  (WINAPI *pK32GetProcessImageFileNameA)(HANDLE,LPSTR,DWORD);
-static HANDLE (WINAPI *pCreateJobObjectW)( LPSECURITY_ATTRIBUTES sa, LPCWSTR name );
-static BOOL   (WINAPI *pAssignProcessToJobObject)( HANDLE job, HANDLE process );
-static BOOL   (WINAPI *pSetInformationJobObject)( HANDLE job, JOBOBJECTINFOCLASS class, LPVOID info, DWORD len );
-static BOOL   (WINAPI *pIsProcessInJob)( HANDLE process, HANDLE job, PBOOL result );
-static BOOL   (WINAPI *pTerminateJobObject)( HANDLE job, UINT exit_code );
+static HANDLE (WINAPI *pCreateJobObjectW)(LPSECURITY_ATTRIBUTES sa, LPCWSTR name);
+static BOOL   (WINAPI *pAssignProcessToJobObject)(HANDLE job, HANDLE process);
+static BOOL   (WINAPI *pSetInformationJobObject)(HANDLE job, JOBOBJECTINFOCLASS class, LPVOID info, DWORD len);
+static BOOL   (WINAPI *pQueryInformationJobObject)(HANDLE job, JOBOBJECTINFOCLASS class, LPVOID info, DWORD len, LPDWORD lpReturnLength);
+static BOOL   (WINAPI *pIsProcessInJob)(HANDLE process, HANDLE job, PBOOL result);
+static BOOL   (WINAPI *pTerminateJobObject)(HANDLE job, UINT exit_code);
 
 /* ############################### */
 static char     base[MAX_PATH];
@@ -215,6 +216,7 @@ static BOOL init(void)
     pCreateJobObjectW = (void *) GetProcAddress(hkernel32, "CreateJobObjectW");
     pAssignProcessToJobObject = (void *) GetProcAddress(hkernel32, "AssignProcessToJobObject");
     pSetInformationJobObject = (void *) GetProcAddress(hkernel32, "SetInformationJobObject");
+    pQueryInformationJobObject = (void *) GetProcAddress(hkernel32, "QueryInformationJobObject");
     pIsProcessInJob = (void *) GetProcAddress(hkernel32, "IsProcessInJob");
     pTerminateJobObject = (void *) GetProcAddress(hkernel32, "TerminateJobObject");
     return TRUE;
@@ -2101,7 +2103,8 @@ static void _test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD e
 
 static void test_JobObject(void) {
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION info;
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit_info;
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION acct_info;
     PROCESS_INFORMATION pi[4];
     STARTUPINFOA si[4] = {{0}};
     HANDLE JobObject;
@@ -2186,7 +2189,6 @@ static void test_JobObject(void) {
 
     thisProcess = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE,
                               FALSE, GetCurrentProcessId());
-
     ret = pAssignProcessToJobObject(JobObject, thisProcess);
     ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
 
@@ -2194,7 +2196,6 @@ static void test_JobObject(void) {
 
     ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[3], &pi[3]),
         "CreateProcess: (%d)\n", GetLastError());
-
     winetest_wait_child_process(pi[3].hProcess);
 
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, GetCurrentProcessId(), 0);
@@ -2204,9 +2205,8 @@ static void test_JobObject(void) {
     ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
         "CreateProcess expected failure\n");
 
-    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
-
-    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &info, sizeof(info));
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
     ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
@@ -2218,9 +2218,8 @@ static void test_JobObject(void) {
         ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
     }
 
-    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
-
-    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &info, sizeof(info));
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
     ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
@@ -2232,9 +2231,8 @@ static void test_JobObject(void) {
         ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
     }
 
-    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
-
-    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &info, sizeof(info));
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
     ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
@@ -2244,6 +2242,17 @@ static void test_JobObject(void) {
     if(pIsProcessInJob) {
         ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
         ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
+    }
+
+    ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), NULL);
+    ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
+    if(ret) {
+        ok(acct_info.TotalProcesses == 5,
+            "expected TotalProcesses == 5 (%d)\n", acct_info.TotalProcesses);
+        ok(acct_info.ActiveProcesses == 1,
+            "expected ActiveProcesses == 1 (%d)\n", acct_info.ActiveProcesses);
+        ok(acct_info.TotalTerminatedProcesses == 0,
+            "expected TotalTerminatedProcesses == 0 (%d)\n", acct_info.TotalTerminatedProcesses);
     }
 }
 
