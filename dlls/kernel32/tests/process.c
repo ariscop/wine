@@ -2244,16 +2244,35 @@ static void test_JobObject(void) {
         ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
     }
 
+    sprintf(buffer, "\"%s\" tests/process.c ignored \"%s\"", selfname, "wait");
+
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+    limit_info.BasicLimitInformation.ActiveProcessLimit = 3;
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
+        "CreateProcess: (%d)\n", GetLastError());
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
+        "CreateProcess: (%d)\n", GetLastError());
+    ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
+        "CreateProcess expected failure\n");
+
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), NULL);
     ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
     if(ret) {
-        ok(acct_info.TotalProcesses == 5,
-            "expected TotalProcesses == 5 (%d)\n", acct_info.TotalProcesses);
-        ok(acct_info.ActiveProcesses == 1,
-            "expected ActiveProcesses == 1 (%d)\n", acct_info.ActiveProcesses);
+        ok(acct_info.TotalProcesses == 8,
+            "expected TotalProcesses == 8 (%d)\n", acct_info.TotalProcesses);
+        ok(acct_info.ActiveProcesses == 3,
+            "expected ActiveProcesses == 3 (%d)\n", acct_info.ActiveProcesses);
         ok(acct_info.TotalTerminatedProcesses == 0,
             "expected TotalTerminatedProcesses == 0 (%d)\n", acct_info.TotalTerminatedProcesses);
     }
+
+    TerminateProcess(pi[0].hProcess, 0);
+    TerminateProcess(pi[1].hProcess, 0);
+    TerminateProcess(pi[2].hProcess, 0);
+    TerminateProcess(pi[3].hProcess, 0);
 }
 
 START_TEST(process)
