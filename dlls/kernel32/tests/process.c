@@ -2261,6 +2261,10 @@ static void test_JobObject(void) {
     ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
         "CreateProcess expected failure\n");
 
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,  JobObject, 0, 0);
+
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), &ret_len);
     ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
     ok(ret_len == sizeof(acct_info),
@@ -2289,11 +2293,11 @@ static void test_JobObject(void) {
         ok(pid_list->NumberOfProcessIdsInList == 3,
             "expected NumberOfProcessIdsInList  == 3 (%d)\n", pid_list->NumberOfProcessIdsInList);
         ok(pid_list->ProcessIdList[0] == GetCurrentProcessId(),
-            "expected pid %d (%d)\n", GetCurrentProcessId(), pid_list->ProcessIdList[0]);
+            "expected pid %d (%d)\n", GetCurrentProcessId(), (DWORD)pid_list->ProcessIdList[0]);
         ok(pid_list->ProcessIdList[1] == pi[0].dwProcessId,
-            "expected pid %d (%d)\n", pi[0].dwProcessId, pid_list->ProcessIdList[1]);
+            "expected pid %d (%d)\n", pi[0].dwProcessId, (DWORD)pid_list->ProcessIdList[1]);
         ok(pid_list->ProcessIdList[2] == pi[1].dwProcessId,
-            "expected pid %d (%d)\n", pi[1].dwProcessId, pid_list->ProcessIdList[2]);
+            "expected pid %d (%d)\n", pi[1].dwProcessId, (DWORD)pid_list->ProcessIdList[2]);
     }
 
     TerminateProcess(pi[0].hProcess, 0);
