@@ -2109,7 +2109,9 @@ static void test_JobObject(void) {
     PROCESS_INFORMATION pi[4];
     STARTUPINFOA si[4] = {{0}};
     HANDLE JobObject;
+    HANDLE JobObject_2;
     HANDLE IOPort;
+    HANDLE IOPort_2;
     HANDLE thisProcess;
     DWORD info_len;
     DWORD ret_len;
@@ -2188,7 +2190,7 @@ static void test_JobObject(void) {
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[2].dwProcessId, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
 
-    todo_wine ok(!WaitForSingleObject(JobObject, 0), "expected signaled\n");
+    todo_wine ok(!WaitForSingleObject(JobObject, 0), "expecting signaled\n");
 
     thisProcess = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE,
                               FALSE, GetCurrentProcessId());
@@ -2281,7 +2283,7 @@ static void test_JobObject(void) {
     info_len = sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST);
     pid_list = HeapAlloc(GetProcessHeap(), 0, info_len);
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
-    ok(!ret && GetLastError() == ERROR_MORE_DATA && ret_len == 48,
+    ok(!ret && GetLastError() == ERROR_MORE_DATA,
         "QueryInformationJobObject (%d) (ret_len: %d)\n", GetLastError(), ret_len);    
     info_len = ret_len;
     pid_list = HeapReAlloc(GetProcessHeap(), 0, pid_list, info_len);
@@ -2307,6 +2309,48 @@ static void test_JobObject(void) {
 
     test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
+
+    JobObject_2 = pCreateJobObjectW(NULL, NULL);
+    ok(JobObject_2 != NULL, "CreateJobObject (%d)\n", GetLastError());
+
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
+        "CreateProcess: (%d)\n", GetLastError());
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
+        "CreateProcess: (%d)\n", GetLastError());
+    ret = pAssignProcessToJobObject(JobObject_2, pi[0].hProcess);
+    if(!ret) {
+        win_skip("No nested job support\n");
+        TerminateProcess(pi[0].hProcess, 0);
+        TerminateProcess(pi[1].hProcess, 0);
+        return;
+    }
+
+    IOPort_2 = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
+    ok(IOPort_2 != NULL, "CreateIoCompletionPort (%d)", GetLastError());
+
+    Port.CompletionKey = JobObject_2;
+    Port.CompletionPort = IOPort_2;
+    ret = pSetInformationJobObject(JobObject_2, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[0].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[1].dwProcessId, 0);
+    test_job_completion(IOPort_2, JOB_OBJECT_MSG_NEW_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
+
+    TerminateProcess(pi[0].hProcess, 0);
+    WaitForSingleObject(pi[0].hProcess, 1000);
+    TerminateProcess(pi[1].hProcess, 0);
+    WaitForSingleObject(pi[1].hProcess, 1000);
+
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
+    test_job_completion(IOPort_2, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
+    test_job_completion(IOPort_2, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 100);
+
+    ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
+    ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+    ret = pIsProcessInJob(pi[0].hProcess, JobObject_2, &out);
+    ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
 }
 
 START_TEST(process)
