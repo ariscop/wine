@@ -2301,8 +2301,12 @@ static void test_JobObject(void) {
     }
 
     TerminateProcess(pi[0].hProcess, 0);
-    TerminateProcess(pi[1].hProcess, 0);
-    TerminateProcess(pi[2].hProcess, 0);
+    WaitForSingleObject(pi[0].hProcess, 1000);
+    TerminateProcess(pi[1].hProcess, STATUS_ACCESS_VIOLATION);
+    WaitForSingleObject(pi[1].hProcess, 1000);
+
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
 }
 
 START_TEST(process)
