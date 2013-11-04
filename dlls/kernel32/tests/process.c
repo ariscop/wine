@@ -2105,11 +2105,14 @@ static void test_JobObject(void) {
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit_info;
     JOBOBJECT_BASIC_ACCOUNTING_INFORMATION acct_info;
+    PJOBOBJECT_BASIC_PROCESS_ID_LIST pid_list;
     PROCESS_INFORMATION pi[4];
     STARTUPINFOA si[4] = {{0}};
     HANDLE JobObject;
     HANDLE IOPort;
     HANDLE thisProcess;
+    DWORD info_len;
+    DWORD ret_len;
     BOOL ret;
     BOOL out;
     char buffer[MAX_PATH];
@@ -2258,8 +2261,10 @@ static void test_JobObject(void) {
     ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
         "CreateProcess expected failure\n");
 
-    ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), NULL);
+    ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), &ret_len);
     ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
+    ok(ret_len == sizeof(acct_info),
+        "QueryInformationJobObject wrong length, expected %d, got %d\n", sizeof(acct_info), ret_len);
     if(ret) {
         ok(acct_info.TotalProcesses == 8,
             "expected TotalProcesses == 8 (%d)\n", acct_info.TotalProcesses);
@@ -2269,10 +2274,31 @@ static void test_JobObject(void) {
             "expected TotalTerminatedProcesses == 0 (%d)\n", acct_info.TotalTerminatedProcesses);
     }
 
+    info_len = sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST);
+    pid_list = HeapAlloc(GetProcessHeap(), 0, info_len);
+    ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
+    ok(!ret && GetLastError() == ERROR_MORE_DATA && ret_len == 48,
+        "QueryInformationJobObject (%d) (ret_len: %d)\n", GetLastError(), ret_len);    
+    info_len = ret_len;
+    pid_list = HeapReAlloc(GetProcessHeap(), 0, pid_list, info_len);
+    ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
+    ok(ret, "QueryInformationJobObject (%d)", GetLastError());
+    if(ret) {
+        ok(pid_list->NumberOfAssignedProcesses == 3,
+            "expected NumberOfAssignedProcesses == 3 (%d)\n", pid_list->NumberOfAssignedProcesses);
+        ok(pid_list->NumberOfProcessIdsInList == 3,
+            "expected NumberOfProcessIdsInList  == 3 (%d)\n", pid_list->NumberOfProcessIdsInList);
+        ok(pid_list->ProcessIdList[0] == GetCurrentProcessId(),
+            "expected pid %d (%d)\n", GetCurrentProcessId(), pid_list->ProcessIdList[0]);
+        ok(pid_list->ProcessIdList[1] == pi[0].dwProcessId,
+            "expected pid %d (%d)\n", pi[0].dwProcessId, pid_list->ProcessIdList[1]);
+        ok(pid_list->ProcessIdList[2] == pi[1].dwProcessId,
+            "expected pid %d (%d)\n", pi[1].dwProcessId, pid_list->ProcessIdList[2]);
+    }
+
     TerminateProcess(pi[0].hProcess, 0);
     TerminateProcess(pi[1].hProcess, 0);
     TerminateProcess(pi[2].hProcess, 0);
-    TerminateProcess(pi[3].hProcess, 0);
 }
 
 START_TEST(process)
