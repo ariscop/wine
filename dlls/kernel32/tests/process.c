@@ -2251,6 +2251,38 @@ static void test_JobObject(void) {
 
     sprintf(buffer, "\"%s\" tests/process.c ignored \"%s\"", selfname, "wait");
 
+    JobObject_2 = pCreateJobObjectW(NULL, NULL);
+    ok(JobObject_2 != NULL, "CreateJobObject (%d)\n", GetLastError());
+
+    IOPort_2 = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
+    ok(IOPort_2 != NULL, "CreateIoCompletionPort (%d)", GetLastError());
+
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    ret = pSetInformationJobObject(JobObject_2, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    Port.CompletionKey = JobObject_2;
+    Port.CompletionPort = IOPort_2;
+    ret = pSetInformationJobObject(JobObject_2, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
+        "CreateProcess: (%d)\n", GetLastError());
+
+    ret = pAssignProcessToJobObject(JobObject_2, pi[0].hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    test_job_completion(IOPort_2, JOB_OBJECT_MSG_NEW_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
+    CloseHandle(JobObject_2);
+
+    WaitForSingleObject(JobObject_2, 1000);
+    ret = GetExitCodeProcess(pi[0].hProcess, &ret_len);
+    ok(ret, "GetExitCodeProcess (%d)\n", GetLastError());
+
+    test_job_completion(IOPort_2, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 1000);
+
+    TerminateProcess(pi[0].hProcess, 0);
+
     limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
     limit_info.BasicLimitInformation.ActiveProcessLimit = 3;
     ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
@@ -2324,9 +2356,6 @@ static void test_JobObject(void) {
         TerminateProcess(pi[1].hProcess, 0);
         return;
     }
-
-    IOPort_2 = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
-    ok(IOPort_2 != NULL, "CreateIoCompletionPort (%d)", GetLastError());
 
     Port.CompletionKey = JobObject_2;
     Port.CompletionPort = IOPort_2;
