@@ -2104,18 +2104,12 @@ static void _test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD e
 static void test_JobObject(void) {
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit_info;
-    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION acct_info;
-    PJOBOBJECT_BASIC_PROCESS_ID_LIST pid_list;
     PROCESS_INFORMATION pi[4];
     STARTUPINFOA si[4] = {{0}};
     HANDLE JobObject;
-    HANDLE JobObject_2;
     HANDLE IOPort;
     HANDLE thisProcess;
-    DWORD info_len;
-    DWORD ret_len;
     BOOL ret;
-    BOOL out;
     char buffer[MAX_PATH];
 
     if(!pCreateJobObjectW) {
@@ -2136,246 +2130,29 @@ static void test_JobObject(void) {
     ret = pSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
-        "CreateProcess (%d)\n", GetLastError());
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
-        "CreateProcess (%d)\n", GetLastError());
-
-    if(pIsProcessInJob) {
-        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-        ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
-    }
-
-    ret = pAssignProcessToJobObject(JobObject, pi[0].hProcess);
-    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
-
-    if(pIsProcessInJob) {
-        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-        ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
-    }
-
-    ret = pAssignProcessToJobObject(JobObject, pi[1].hProcess);
-    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
-
-    ok(TerminateProcess(pi[0].hProcess, 0), "TerminateProcess (%d)\n", GetLastError());
-    winetest_wait_child_process(pi[0].hProcess);
-    ok(TerminateProcess(pi[1].hProcess, 0), "TerminateProcess (%d)\n", GetLastError());
-    winetest_wait_child_process(pi[1].hProcess);
-
-    if(pIsProcessInJob) {
-        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-        ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
-    }
-
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
-
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
-        "CreateProcess: (%d)\n", GetLastError());
-
-    ret = pAssignProcessToJobObject(JobObject, pi[2].hProcess);
-    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
-
-    ok(WaitForSingleObject(JobObject, 0), "expected not signaled\n");
-
-    ret = pTerminateJobObject( JobObject, 0 );
-    ok(ret, "TerminateJobObject (%d)\n", GetLastError());
-
-    winetest_wait_child_process(pi[2].hProcess);
-
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[2].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
-
-    todo_wine ok(!WaitForSingleObject(JobObject, 0), "expecting signaled\n");
-
     thisProcess = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE,
                               FALSE, GetCurrentProcessId());
     ret = pAssignProcessToJobObject(JobObject, thisProcess);
     ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
 
-    sprintf(buffer, "\"%s\" tests/process.c ignored \"%s\"", selfname, "exit");
-
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[3], &pi[3]),
-        "CreateProcess: (%d)\n", GetLastError());
-    winetest_wait_child_process(pi[3].hProcess);
-
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, GetCurrentProcessId(), 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[3].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[3].dwProcessId, 100);
-
-    ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
-        "CreateProcess expected failure\n");
-
-    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
-    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
-    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
-
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]),
-        "CreateProcess: (%d)\n", GetLastError());
-    winetest_wait_child_process(pi[0].hProcess);
-
-    if(pIsProcessInJob) {
-        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-        ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
-    }
-
-    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
-    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
-    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
-
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
-        "CreateProcess: (%d)\n", GetLastError());
-    winetest_wait_child_process(pi[0].hProcess);
-
-    if(pIsProcessInJob) {
-        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-        ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
-    }
-
-    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
-    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
-    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
-
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
-        "CreateProcess: (%d)\n", GetLastError());
-    winetest_wait_child_process(pi[0].hProcess);
-
-    if(pIsProcessInJob) {
-        ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-        ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
-    }
-
-    sprintf(buffer, "\"%s\" tests/process.c ignored \"%s\"", selfname, "wait");
-
-    JobObject_2 = pCreateJobObjectW(NULL, NULL);
-    ok(JobObject_2 != NULL, "CreateJobObject (%d)\n", GetLastError());
-
-    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    ret = pSetInformationJobObject(JobObject_2, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
-    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
-
-    Port.CompletionKey = JobObject_2;
-    Port.CompletionPort = IOPort;
-    ret = pSetInformationJobObject(JobObject_2, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
-    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
-
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
-        "CreateProcess: (%d)\n", GetLastError());
-
-    ret = pAssignProcessToJobObject(JobObject_2, pi[0].hProcess);
-    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
-
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
-    CloseHandle(JobObject_2);
-
-    WaitForSingleObject(JobObject_2, 1000);
-    ret = GetExitCodeProcess(pi[0].hProcess, &ret_len);
-    ok(ret, "GetExitCodeProcess (%d)\n", GetLastError());
-
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 1000);
-
-    TerminateProcess(pi[0].hProcess, 0);
 
     limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
-    limit_info.BasicLimitInformation.ActiveProcessLimit = 3;
+    limit_info.BasicLimitInformation.ActiveProcessLimit = 1;
     ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
-        "CreateProcess: (%d)\n", GetLastError());
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
-        "CreateProcess: (%d)\n", GetLastError());
     ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
         "CreateProcess expected failure\n");
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,  JobObject, 0, 0);
 
-    ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), &ret_len);
-    ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
-    ok(ret_len == sizeof(acct_info),
-        "QueryInformationJobObject wrong length, expected %d, got %d\n", sizeof(acct_info), ret_len);
-    if(ret) {
-        ok(acct_info.TotalProcesses == 8,
-            "expected TotalProcesses == 8 (%d)\n", acct_info.TotalProcesses);
-        ok(acct_info.ActiveProcesses == 3,
-            "expected ActiveProcesses == 3 (%d)\n", acct_info.ActiveProcesses);
-        ok(acct_info.TotalTerminatedProcesses == 0,
-            "expected TotalTerminatedProcesses == 0 (%d)\n", acct_info.TotalTerminatedProcesses);
-    }
-
-    info_len = sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST);
-    pid_list = HeapAlloc(GetProcessHeap(), 0, info_len);
-    ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
-    ok(!ret && GetLastError() == ERROR_MORE_DATA,
-        "QueryInformationJobObject (%d) (ret_len: %d)\n", GetLastError(), ret_len);    
-    info_len = ret_len;
-    pid_list = HeapReAlloc(GetProcessHeap(), 0, pid_list, info_len);
-    ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
-    ok(ret, "QueryInformationJobObject (%d)", GetLastError());
-    if(ret) {
-        ok(pid_list->NumberOfAssignedProcesses == 3,
-            "expected NumberOfAssignedProcesses == 3 (%d)\n", pid_list->NumberOfAssignedProcesses);
-        ok(pid_list->NumberOfProcessIdsInList == 3,
-            "expected NumberOfProcessIdsInList  == 3 (%d)\n", pid_list->NumberOfProcessIdsInList);
-        ok(pid_list->ProcessIdList[0] == GetCurrentProcessId(),
-            "expected pid %d (%d)\n", GetCurrentProcessId(), (DWORD)pid_list->ProcessIdList[0]);
-        ok(pid_list->ProcessIdList[1] == pi[0].dwProcessId,
-            "expected pid %d (%d)\n", pi[0].dwProcessId, (DWORD)pid_list->ProcessIdList[1]);
-        ok(pid_list->ProcessIdList[2] == pi[1].dwProcessId,
-            "expected pid %d (%d)\n", pi[1].dwProcessId, (DWORD)pid_list->ProcessIdList[2]);
-    }
-
-    TerminateProcess(pi[0].hProcess, 0);
-    WaitForSingleObject(pi[0].hProcess, 1000);
     TerminateProcess(pi[1].hProcess, STATUS_ACCESS_VIOLATION);
     WaitForSingleObject(pi[1].hProcess, 1000);
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
+    Sleep(1000);
 
-    JobObject_2 = pCreateJobObjectW(NULL, NULL);
-    ok(JobObject_2 != NULL, "CreateJobObject (%d)\n", GetLastError());
-
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
-        "CreateProcess: (%d)\n", GetLastError());
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
-        "CreateProcess: (%d)\n", GetLastError());
-    ret = pAssignProcessToJobObject(JobObject_2, pi[0].hProcess);
-    if(!ret) {
-        win_skip("No nested job support\n");
-        TerminateProcess(pi[0].hProcess, 0);
-        TerminateProcess(pi[1].hProcess, 0);
-        return;
-    }
-
-    Port.CompletionKey = JobObject_2;
-    Port.CompletionPort = IOPort;
-    ret = pSetInformationJobObject(JobObject_2, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
-    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
-
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[1].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
-
-    TerminateProcess(pi[0].hProcess, 0);
-    WaitForSingleObject(pi[0].hProcess, 1000);
-    TerminateProcess(pi[1].hProcess, 0);
-    WaitForSingleObject(pi[1].hProcess, 1000);
-
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 100);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
-
-    ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-    ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
-    ret = pIsProcessInJob(pi[0].hProcess, JobObject_2, &out);
-    ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+    test_job_completion(IOPort, 0, 0, 0, 0);
 }
 
 START_TEST(process)
@@ -2389,6 +2166,7 @@ START_TEST(process)
         doChild(myARGV[2], (myARGC == 3) ? NULL : myARGV[3]);
         return;
     }
+goto job;
     test_TerminateProcess();
     test_Startup();
     test_CommandLine();
@@ -2407,6 +2185,7 @@ START_TEST(process)
     test_SystemInfo();
     test_RegistryQuota();
     test_DuplicateHandle();
+job:
     test_JobObject();
     /* things that can be tested:
      *  lookup:         check the way program to be executed is searched
