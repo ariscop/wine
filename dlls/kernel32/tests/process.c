@@ -2303,12 +2303,9 @@ static void test_JobObject(void) {
     ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
     expect_eq_d(sizeof(acct_info), ret_len);
     if(ret) {
-        ok(acct_info.TotalProcesses == 6,
-            "expected TotalProcesses == 6 (%d)\n", acct_info.TotalProcesses);
-        ok(acct_info.ActiveProcesses == 2,
-            "expected ActiveProcesses == 2 (%d)\n", acct_info.ActiveProcesses);
-        ok(acct_info.TotalTerminatedProcesses == 0,
-            "expected TotalTerminatedProcesses == 0 (%d)\n", acct_info.TotalTerminatedProcesses);
+        expect_eq_d(6, acct_info.TotalProcesses);
+        expect_eq_d(2, acct_info.ActiveProcesses);
+        expect_eq_d(0, acct_info.TotalTerminatedProcesses);
     }
 
     info_len = sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST);
@@ -2323,14 +2320,10 @@ static void test_JobObject(void) {
     ok(info_len >= ret_len,
         "Expected info_len (%d) >= ret_len (%d)\n", info_len, ret_len);
     if(ret) {
-        ok(pid_list->NumberOfAssignedProcesses == 2,
-            "expected NumberOfAssignedProcesses == 2 (%d)\n", pid_list->NumberOfAssignedProcesses);
-        ok(pid_list->NumberOfProcessIdsInList == 2,
-            "expected NumberOfProcessIdsInList  == 2 (%d)\n", pid_list->NumberOfProcessIdsInList);
-        ok(pid_list->ProcessIdList[0] == GetCurrentProcessId(),
-            "expected pid %d (%d)\n", GetCurrentProcessId(), (DWORD)pid_list->ProcessIdList[0]);
-        ok(pid_list->ProcessIdList[1] == pi[0].dwProcessId,
-            "expected pid %d (%d)\n", pi[0].dwProcessId, (DWORD)pid_list->ProcessIdList[1]);
+        expect_eq_d(2, pid_list->NumberOfAssignedProcesses);
+        expect_eq_d(2, pid_list->NumberOfProcessIdsInList);
+        expect_eq_d(GetCurrentProcessId(), pid_list->ProcessIdList[0]);
+        expect_eq_d(pi[0].dwProcessId, pid_list->ProcessIdList[1]);
     }
 
     TerminateProcess(pi[0].hProcess, STATUS_ACCESS_VIOLATION);
