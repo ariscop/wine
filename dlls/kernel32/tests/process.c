@@ -2276,7 +2276,7 @@ static void test_JobObject(void) {
     ret = GetExitCodeProcess(pi[0].hProcess, &ret_len);
     ok(ret, "GetExitCodeProcess (%d)\n", GetLastError());
 
-    /* Fails on windows 8 
+    /* Fails on windows 8
      * test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 1000);
      */
     test_job_completion(IOPort, -1,  0, 0, 0);
@@ -2312,7 +2312,7 @@ static void test_JobObject(void) {
     pid_list = HeapAlloc(GetProcessHeap(), 0, info_len);
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
     todo_wine ok(!ret && GetLastError() == ERROR_MORE_DATA,
-        "QueryInformationJobObject (%d) (ret_len: %d)\n", GetLastError(), ret_len);    
+        "QueryInformationJobObject (%d) (ret_len: %d)\n", GetLastError(), ret_len);
     info_len = ret_len;
     pid_list = HeapReAlloc(GetProcessHeap(), 0, pid_list, info_len);
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
