@@ -2338,7 +2338,7 @@ static void test_JobObject(void) {
 
     test_job_completion(IOPort, JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
 
-    limit_info.BasicLimitInformation.LimitFlags = 0;
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
     limit_info.BasicLimitInformation.ActiveProcessLimit = 12;
     ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
@@ -2352,7 +2352,7 @@ static void test_JobObject(void) {
 
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]);
     ok(ret, "CreateProcess: (%d)\n", GetLastError());
-    ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]);
+    ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[1], &pi[1]);
     ok(ret, "CreateProcess: (%d)\n", GetLastError());
 
     ret = pAssignProcessToJobObject(JobObject_2, pi[0].hProcess);
@@ -2368,9 +2368,12 @@ static void test_JobObject(void) {
     ret = pSetInformationJobObject(JobObject_2, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
+    ret = pAssignProcessToJobObject(JobObject_2, pi[1].hProcess);
+
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[1].dwProcessId, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject_2, pi[1].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[1].dwProcessId, 0);
 
     TerminateProcess(pi[0].hProcess, 0);
     WaitForSingleObject(pi[0].hProcess, 1000);
@@ -2379,8 +2382,9 @@ static void test_JobObject(void) {
 
     test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 100);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject_2, pi[1].dwProcessId, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 100);
 
     ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
     ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
