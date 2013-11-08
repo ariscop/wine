@@ -2261,7 +2261,7 @@ static void test_JobObject(void) {
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
     ret = pSetInformationJobObject(JobObject_2, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
-    ok(!ret, "SetInformationJobObject Expected failure");
+    todo_wine ok(!ret, "SetInformationJobObject Expected failure");
 
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]);
     ok(ret, "CreateProcess: (%d)\n", GetLastError());
@@ -2291,17 +2291,17 @@ static void test_JobObject(void) {
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]);
     ok(ret, "CreateProcess: (%d)\n", GetLastError());
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]);
-    ok(!ret, "CreateProcess expected failure\n");
+    todo_wine ok(!ret, "CreateProcess expected failure\n");
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,  JobObject, 0, 100);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,  JobObject, 0, 100);
     /* On windows 8.1, an EXIT_PROCESS event is posted for the failed
      * process start, ignore it */
     test_job_completion(IOPort, -1,  0, 0, 0);
 
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), &ret_len);
-    ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
-    expect_eq_d(sizeof(acct_info), ret_len);
+    todo_wine ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
+    todo_wine expect_eq_d(sizeof(acct_info), ret_len);
     if(ret) {
         expect_eq_d(6, acct_info.TotalProcesses);
         expect_eq_d(2, acct_info.ActiveProcesses);
@@ -2311,12 +2311,12 @@ static void test_JobObject(void) {
     info_len = sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST);
     pid_list = HeapAlloc(GetProcessHeap(), 0, info_len);
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
-    ok(!ret && GetLastError() == ERROR_MORE_DATA,
+    todo_wine ok(!ret && GetLastError() == ERROR_MORE_DATA,
         "QueryInformationJobObject (%d) (ret_len: %d)\n", GetLastError(), ret_len);    
     info_len = ret_len;
     pid_list = HeapReAlloc(GetProcessHeap(), 0, pid_list, info_len);
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
-    ok(ret, "QueryInformationJobObject (%d)", GetLastError());
+    todo_wine ok(ret, "QueryInformationJobObject (%d)", GetLastError());
     ok(info_len >= ret_len,
         "Expected info_len (%d) >= ret_len (%d)\n", info_len, ret_len);
     if(ret) {
@@ -2329,7 +2329,7 @@ static void test_JobObject(void) {
     TerminateProcess(pi[0].hProcess, STATUS_ACCESS_VIOLATION);
     WaitForSingleObject(pi[0].hProcess, 1000);
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
 
     limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
     limit_info.BasicLimitInformation.ActiveProcessLimit = 12;
@@ -2337,8 +2337,8 @@ static void test_JobObject(void) {
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
     ret = pQueryInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info), NULL);
-    ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
-    expect_eq_d(0, limit_info.BasicLimitInformation.ActiveProcessLimit);
+    todo_wine ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
+    todo_wine expect_eq_d(0, limit_info.BasicLimitInformation.ActiveProcessLimit);
 
     JobObject_2 = pCreateJobObjectW(NULL, NULL);
     ok(JobObject_2 != NULL, "CreateJobObject (%d)\n", GetLastError());
@@ -2350,7 +2350,7 @@ static void test_JobObject(void) {
 
     ret = pAssignProcessToJobObject(JobObject_2, pi[0].hProcess);
     if(!ret) {
-        win_skip("No nested job support\n");
+        todo_wine win_skip("No nested job support\n");
         TerminateProcess(pi[0].hProcess, 0);
         TerminateProcess(pi[1].hProcess, 0);
         return;
@@ -2363,26 +2363,26 @@ static void test_JobObject(void) {
 
     ret = pAssignProcessToJobObject(JobObject_2, pi[1].hProcess);
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject_2, pi[1].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[1].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[0].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject_2, pi[1].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS, JobObject, pi[1].dwProcessId, 0);
 
     TerminateProcess(pi[0].hProcess, 0);
     WaitForSingleObject(pi[0].hProcess, 1000);
     TerminateProcess(pi[1].hProcess, 0);
     WaitForSingleObject(pi[1].hProcess, 1000);
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject_2, pi[1].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 100);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject_2, pi[0].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject_2, pi[1].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 100);
 
     ret = pIsProcessInJob(pi[0].hProcess, JobObject, &out);
-    ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+    todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
     ret = pIsProcessInJob(pi[0].hProcess, JobObject_2, &out);
-    ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+    todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
 }
 
 START_TEST(process)
