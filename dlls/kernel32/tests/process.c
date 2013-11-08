@@ -2184,8 +2184,9 @@ static void test_JobObject(void) {
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
 
-    /* Fails on windows xp */
-    todo_wine ok(!WaitForSingleObject(JobObject, 0), "expecting signaled\n");
+    /* Fails on windows xp
+     * ok(!WaitForSingleObject(JobObject, 0), "expecting signaled\n");
+     */
 
     thisProcess = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE,
                               FALSE, GetCurrentProcessId());
@@ -2274,8 +2275,10 @@ static void test_JobObject(void) {
     ret = GetExitCodeProcess(pi[0].hProcess, &ret_len);
     ok(ret, "GetExitCodeProcess (%d)\n", GetLastError());
 
-    /* Fails on windows 8 */
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 1000);
+    /* Fails on windows 8 
+     * test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 1000);
+     */
+    test_job_completion(IOPort, -1,  0, 0, 0);
 
     TerminateProcess(pi[0].hProcess, 0);
 
