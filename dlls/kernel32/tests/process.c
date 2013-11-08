@@ -2082,20 +2082,24 @@ static void test_DuplicateHandle(void)
     CloseHandle(out);
 }
 
-static void _test_job_completion(HANDLE IOPort, DWORD eKey, HANDLE eVal, DWORD eOverlap, DWORD wait)
+static void _test_job_completion(HANDLE IOPort, DWORD eCompletionKey, HANDLE eCompletionValue, DWORD eOverlapped, DWORD wait)
 {
-    DWORD CompletionKey, ret;
+    DWORD CompletionKey;
     ULONG_PTR CompletionValue;
     LPOVERLAPPED Overlapped;
+    BOOL ret;
 
     ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, wait);
+    if(eCompletionKey == -1)
+        return; /* blindly dequeue an event */
     winetest_ok(ret, "GetQueuedCompletionStatus: %x\n", GetLastError());
     if(ret) {
-        winetest_ok(eKey == CompletionKey &&
-            (ULONG_PTR)eVal == CompletionValue &&
-            eOverlap == (DWORD_PTR)Overlapped,
-            "Unexpected completion event: %x, %p, %p\n",
-            CompletionKey, (void*)CompletionValue, (void*)Overlapped);
+        winetest_ok(eCompletionKey == CompletionKey
+                 && eCompletionValue == (HANDLE)CompletionValue
+                 && eOverlapped == (DWORD_PTR)Overlapped,
+                    "Unexpected completion event: %x, %p, %p\n",
+                    CompletionKey, (void*)CompletionValue,
+                    (void*)Overlapped);
     }
 }
 
@@ -2189,6 +2193,7 @@ static void test_JobObject(void) {
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[2].dwProcessId, 0);
     test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
 
+    /* Fails on windows xp */
     todo_wine ok(!WaitForSingleObject(JobObject, 0), "expecting signaled\n");
 
     thisProcess = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE,
@@ -2275,35 +2280,36 @@ static void test_JobObject(void) {
     ret = GetExitCodeProcess(pi[0].hProcess, &ret_len);
     ok(ret, "GetExitCodeProcess (%d)\n", GetLastError());
 
+    /* Fails on windows 8 */
     test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 1000);
 
     TerminateProcess(pi[0].hProcess, 0);
 
     limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
-    limit_info.BasicLimitInformation.ActiveProcessLimit = 3;
+    limit_info.BasicLimitInformation.ActiveProcessLimit = 2;
     ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
     ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]),
         "CreateProcess: (%d)\n", GetLastError());
-    ok(CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
-        "CreateProcess: (%d)\n", GetLastError());
-    ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]),
+    ok(!CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]),
         "CreateProcess expected failure\n");
 
     test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,  JobObject, 0, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,  JobObject, 0, 100);
+    /* On windows 8.1, an EXIT_PROCESS event is posted for the failed
+     * process start, ignore it */
+    test_job_completion(IOPort, -1,  0, 0, 0);
 
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), &ret_len);
     ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
     ok(ret_len == sizeof(acct_info),
         "QueryInformationJobObject wrong length, expected %d, got %d\n", sizeof(acct_info), ret_len);
     if(ret) {
-        ok(acct_info.TotalProcesses == 8,
+        ok(acct_info.TotalProcesses == 7,
             "expected TotalProcesses == 8 (%d)\n", acct_info.TotalProcesses);
-        ok(acct_info.ActiveProcesses == 3,
-            "expected ActiveProcesses == 3 (%d)\n", acct_info.ActiveProcesses);
+        ok(acct_info.ActiveProcesses == 2,
+            "expected ActiveProcesses == 2 (%d)\n", acct_info.ActiveProcesses);
         ok(acct_info.TotalTerminatedProcesses == 0,
             "expected TotalTerminatedProcesses == 0 (%d)\n", acct_info.TotalTerminatedProcesses);
     }
@@ -2318,25 +2324,29 @@ static void test_JobObject(void) {
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
     ok(ret, "QueryInformationJobObject (%d)", GetLastError());
     if(ret) {
-        ok(pid_list->NumberOfAssignedProcesses == 3,
-            "expected NumberOfAssignedProcesses == 3 (%d)\n", pid_list->NumberOfAssignedProcesses);
-        ok(pid_list->NumberOfProcessIdsInList == 3,
-            "expected NumberOfProcessIdsInList  == 3 (%d)\n", pid_list->NumberOfProcessIdsInList);
+        ok(pid_list->NumberOfAssignedProcesses == 2,
+            "expected NumberOfAssignedProcesses == 2 (%d)\n", pid_list->NumberOfAssignedProcesses);
+        ok(pid_list->NumberOfProcessIdsInList == 2,
+            "expected NumberOfProcessIdsInList  == 2 (%d)\n", pid_list->NumberOfProcessIdsInList);
         ok(pid_list->ProcessIdList[0] == GetCurrentProcessId(),
             "expected pid %d (%d)\n", GetCurrentProcessId(), (DWORD)pid_list->ProcessIdList[0]);
         ok(pid_list->ProcessIdList[1] == pi[0].dwProcessId,
             "expected pid %d (%d)\n", pi[0].dwProcessId, (DWORD)pid_list->ProcessIdList[1]);
-        ok(pid_list->ProcessIdList[2] == pi[1].dwProcessId,
-            "expected pid %d (%d)\n", pi[1].dwProcessId, (DWORD)pid_list->ProcessIdList[2]);
     }
 
-    TerminateProcess(pi[0].hProcess, 0);
+    TerminateProcess(pi[0].hProcess, STATUS_ACCESS_VIOLATION);
     WaitForSingleObject(pi[0].hProcess, 1000);
-    TerminateProcess(pi[1].hProcess, STATUS_ACCESS_VIOLATION);
-    WaitForSingleObject(pi[1].hProcess, 1000);
 
-    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
-    test_job_completion(IOPort, JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
+
+    limit_info.BasicLimitInformation.LimitFlags = 0;
+    limit_info.BasicLimitInformation.ActiveProcessLimit = 12;
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    ret = pQueryInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info), NULL);
+    ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
+    expect_eq_d(0, limit_info.BasicLimitInformation.ActiveProcessLimit);
 
     JobObject_2 = pCreateJobObjectW(NULL, NULL);
     ok(JobObject_2 != NULL, "CreateJobObject (%d)\n", GetLastError());
