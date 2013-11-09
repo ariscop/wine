@@ -2283,7 +2283,7 @@ static void test_JobObject(void) {
 
     TerminateProcess(pi[0].hProcess, 0);
 
-    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
     limit_info.BasicLimitInformation.ActiveProcessLimit = 2;
     ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
@@ -2299,13 +2299,22 @@ static void test_JobObject(void) {
      * process start, ignore it */
     test_job_completion(IOPort, -1,  0, 0, 0);
 
+    ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[2], &pi[2]);
+    ok(ret, "CreateProcess: (%d)\n", GetLastError());
+    ret = pAssignProcessToJobObject(JobObject, pi[2].hProcess);
+    ok(!ret, "AssignProcessToJobObject expected failure\n");
+    expect_eq_d(ERROR_NOT_ENOUGH_QUOTA, GetLastError());
+    TerminateProcess(pi[2].hProcess, 0);
+
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,  JobObject, 0, 100);
+
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), &ret_len);
     todo_wine ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
     todo_wine expect_eq_d(sizeof(acct_info), ret_len);
     if(ret) {
-        expect_eq_d(6, acct_info.TotalProcesses);
+        expect_eq_d(7, acct_info.TotalProcesses);
         expect_eq_d(2, acct_info.ActiveProcesses);
-        expect_eq_d(0, acct_info.TotalTerminatedProcesses);
+        expect_eq_d(1, acct_info.TotalTerminatedProcesses);
     }
 
     info_len = sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST);
