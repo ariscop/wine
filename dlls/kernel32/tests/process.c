@@ -2284,16 +2284,19 @@ static void test_JobObject(void) {
     TerminateProcess(pi[0].hProcess, 0);
 
     limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
-    limit_info.BasicLimitInformation.ActiveProcessLimit = 2;
+    limit_info.BasicLimitInformation.ActiveProcessLimit = 3;
     ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]);
     ok(ret, "CreateProcess: (%d)\n", GetLastError());
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[1], &pi[1]);
+    ok(ret, "CreateProcess: (%d)\n", GetLastError());
+    ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]);
     todo_wine ok(!ret, "CreateProcess expected failure\n");
 
     todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId, 0);
     todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,  JobObject, 0, 100);
     /* On windows 8.1, an EXIT_PROCESS event is posted for the failed
      * process start, ignore it */
@@ -2308,12 +2311,18 @@ static void test_JobObject(void) {
 
     todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,  JobObject, 0, 100);
 
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    limit_info.BasicLimitInformation.ActiveProcessLimit = 2;
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+    /* Reducing the limit should not kill processes */
+
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), &ret_len);
     todo_wine ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
     todo_wine expect_eq_d(sizeof(acct_info), ret_len);
     if(ret) {
-        expect_eq_d(7, acct_info.TotalProcesses);
-        expect_eq_d(2, acct_info.ActiveProcesses);
+        expect_eq_d(8, acct_info.TotalProcesses);
+        expect_eq_d(3, acct_info.ActiveProcesses);
         expect_eq_d(1, acct_info.TotalTerminatedProcesses);
     }
 
@@ -2329,16 +2338,20 @@ static void test_JobObject(void) {
     ok(info_len >= ret_len,
         "Expected info_len (%d) >= ret_len (%d)\n", info_len, ret_len);
     if(ret) {
-        expect_eq_d(2, pid_list->NumberOfAssignedProcesses);
-        expect_eq_d(2, pid_list->NumberOfProcessIdsInList);
+        expect_eq_d(3, pid_list->NumberOfAssignedProcesses);
+        expect_eq_d(3, pid_list->NumberOfProcessIdsInList);
         expect_eq_d(GetCurrentProcessId(), pid_list->ProcessIdList[0]);
         expect_eq_d(pi[0].dwProcessId, pid_list->ProcessIdList[1]);
+        expect_eq_d(pi[1].dwProcessId, pid_list->ProcessIdList[2]);
     }
 
     TerminateProcess(pi[0].hProcess, STATUS_ACCESS_VIOLATION);
     WaitForSingleObject(pi[0].hProcess, 1000);
+    TerminateProcess(pi[1].hProcess, STATUS_INTEGER_DIVIDE_BY_ZERO);
+    WaitForSingleObject(pi[1].hProcess, 1000);
 
     todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JobObject, pi[0].dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JobObject, pi[1].dwProcessId, 0);
 
     limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
     limit_info.BasicLimitInformation.ActiveProcessLimit = 12;
