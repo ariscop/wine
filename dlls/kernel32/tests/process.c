@@ -2206,6 +2206,7 @@ static void test_JobObject(void) {
 
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si[0], &pi[0]);
     ok(!ret, "CreateProcess expected failure\n");
+    expect_eq_d(ERROR_ACCESS_DENIED, GetLastError());
 
     limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
     ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
@@ -2262,6 +2263,7 @@ static void test_JobObject(void) {
 
     ret = pSetInformationJobObject(JobObject_2, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
     todo_wine ok(!ret, "SetInformationJobObject Expected failure");
+    expect_eq_d(ERROR_INVALID_PARAMETER, GetLastError());
 
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]);
     ok(ret, "CreateProcess: (%d)\n", GetLastError());
@@ -2294,6 +2296,7 @@ static void test_JobObject(void) {
     ok(ret, "CreateProcess: (%d)\n", GetLastError());
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[2], &pi[2]);
     todo_wine ok(!ret, "CreateProcess expected failure\n");
+    expect_eq_d(ERROR_NOT_ENOUGH_QUOTA, GetLastError());
 
     todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[0].dwProcessId, 0);
     todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,  JobObject, pi[1].dwProcessId, 0);
