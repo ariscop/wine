@@ -2118,6 +2118,7 @@ static void test_JobObject(void) {
     HANDLE thisProcess;
     DWORD info_len;
     DWORD ret_len;
+    DWORD exit_code;
     BOOL ret;
     BOOL out;
     char buffer[MAX_PATH];
@@ -2275,8 +2276,9 @@ static void test_JobObject(void) {
     CloseHandle(JobObject_2);
 
     WaitForSingleObject(pi[0].hProcess, 1000);
-    ret = GetExitCodeProcess(pi[0].hProcess, &ret_len);
+    ret = GetExitCodeProcess(pi[0].hProcess, &exit_code);
     ok(ret, "GetExitCodeProcess (%d)\n", GetLastError());
+    expect_eq_d(0, exit_code);
 
     /* Fails on windows 8
      * test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject_2, 0, 1000);
@@ -2310,6 +2312,11 @@ static void test_JobObject(void) {
     ret = pAssignProcessToJobObject(JobObject, pi[2].hProcess);
     ok(!ret, "AssignProcessToJobObject expected failure\n");
     expect_eq_d(ERROR_NOT_ENOUGH_QUOTA, GetLastError());
+
+    WaitForSingleObject(pi[2].hProcess, 1000);
+    ret = GetExitCodeProcess(pi[2].hProcess, &exit_code);
+    ok(ret, "GetExitCodeProcess (%d)\n", GetLastError());
+    expect_eq_d(ERROR_NOT_ENOUGH_QUOTA, exit_code);
     TerminateProcess(pi[2].hProcess, 0);
 
     todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,  JobObject, 0, 100);
