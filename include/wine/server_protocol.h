@@ -733,29 +733,46 @@ struct job_assign_reply
     struct reply_header __header;
 };
 
-struct job_set_completion_request
+struct job_set_info_request
 {
     struct request_header __header;
     obj_handle_t handle;
-    client_ptr_t CompletionKey;
-    obj_handle_t CompletionPort;
-    char __pad_28[4];
+    int          info_class;
+    char __pad_20[4];
+    client_ptr_t completion_key;
+    obj_handle_t completion_port;
+    unsigned int limit_flags;
+    int          active_process_limit;
+    char __pad_44[4];
 };
-struct job_set_completion_reply
+struct job_set_info_reply
 {
     struct reply_header __header;
 };
 
-struct job_set_limit_request
+struct job_query_info_request
 {
     struct request_header __header;
     obj_handle_t handle;
-    int          limit_flags;
-    char __pad_20[4];
 };
-struct job_set_limit_reply
+struct job_query_info_reply
 {
     struct reply_header __header;
+    int          total_processes;
+    int          active_processes;
+};
+
+struct job_pid_list_request
+{
+    struct request_header __header;
+    obj_handle_t handle;
+};
+struct job_pid_list_reply
+{
+    struct reply_header __header;
+    data_size_t  processes;
+    /* VARARG(pids,ints,processes); */
+    char __pad_12[4];
 };
 
 
@@ -5133,8 +5150,9 @@ enum request
     REQ_terminate_job,
     REQ_process_in_job,
     REQ_job_assign,
-    REQ_job_set_completion,
-    REQ_job_set_limit,
+    REQ_job_set_info,
+    REQ_job_query_info,
+    REQ_job_pid_list,
     REQ_get_new_process_info,
     REQ_new_thread,
     REQ_get_startup_info,
@@ -5399,8 +5417,9 @@ union generic_request
     struct terminate_job_request terminate_job_request;
     struct process_in_job_request process_in_job_request;
     struct job_assign_request job_assign_request;
-    struct job_set_completion_request job_set_completion_request;
-    struct job_set_limit_request job_set_limit_request;
+    struct job_set_info_request job_set_info_request;
+    struct job_query_info_request job_query_info_request;
+    struct job_pid_list_request job_pid_list_request;
     struct get_new_process_info_request get_new_process_info_request;
     struct new_thread_request new_thread_request;
     struct get_startup_info_request get_startup_info_request;
@@ -5663,8 +5682,9 @@ union generic_reply
     struct terminate_job_reply terminate_job_reply;
     struct process_in_job_reply process_in_job_reply;
     struct job_assign_reply job_assign_reply;
-    struct job_set_completion_reply job_set_completion_reply;
-    struct job_set_limit_reply job_set_limit_reply;
+    struct job_set_info_reply job_set_info_reply;
+    struct job_query_info_reply job_query_info_reply;
+    struct job_pid_list_reply job_pid_list_reply;
     struct get_new_process_info_reply get_new_process_info_reply;
     struct new_thread_reply new_thread_reply;
     struct get_startup_info_reply get_startup_info_reply;
@@ -5919,6 +5939,6 @@ union generic_reply
     struct set_suspend_context_reply set_suspend_context_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 452
+#define SERVER_PROTOCOL_VERSION 453
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

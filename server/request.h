@@ -111,8 +111,9 @@ DECL_HANDLER(create_job);
 DECL_HANDLER(terminate_job);
 DECL_HANDLER(process_in_job);
 DECL_HANDLER(job_assign);
-DECL_HANDLER(job_set_completion);
-DECL_HANDLER(job_set_limit);
+DECL_HANDLER(job_set_info);
+DECL_HANDLER(job_query_info);
+DECL_HANDLER(job_pid_list);
 DECL_HANDLER(get_new_process_info);
 DECL_HANDLER(new_thread);
 DECL_HANDLER(get_startup_info);
@@ -376,8 +377,9 @@ static const req_handler req_handlers[REQ_NB_REQUESTS] =
     (req_handler)req_terminate_job,
     (req_handler)req_process_in_job,
     (req_handler)req_job_assign,
-    (req_handler)req_job_set_completion,
-    (req_handler)req_job_set_limit,
+    (req_handler)req_job_set_info,
+    (req_handler)req_job_query_info,
+    (req_handler)req_job_pid_list,
     (req_handler)req_get_new_process_info,
     (req_handler)req_new_thread,
     (req_handler)req_get_startup_info,
@@ -691,13 +693,22 @@ C_ASSERT( sizeof(struct process_in_job_request) == 24 );
 C_ASSERT( FIELD_OFFSET(struct job_assign_request, job_handle) == 12 );
 C_ASSERT( FIELD_OFFSET(struct job_assign_request, process_handle) == 16 );
 C_ASSERT( sizeof(struct job_assign_request) == 24 );
-C_ASSERT( FIELD_OFFSET(struct job_set_completion_request, handle) == 12 );
-C_ASSERT( FIELD_OFFSET(struct job_set_completion_request, CompletionKey) == 16 );
-C_ASSERT( FIELD_OFFSET(struct job_set_completion_request, CompletionPort) == 24 );
-C_ASSERT( sizeof(struct job_set_completion_request) == 32 );
-C_ASSERT( FIELD_OFFSET(struct job_set_limit_request, handle) == 12 );
-C_ASSERT( FIELD_OFFSET(struct job_set_limit_request, limit_flags) == 16 );
-C_ASSERT( sizeof(struct job_set_limit_request) == 24 );
+C_ASSERT( FIELD_OFFSET(struct job_set_info_request, handle) == 12 );
+C_ASSERT( FIELD_OFFSET(struct job_set_info_request, info_class) == 16 );
+C_ASSERT( FIELD_OFFSET(struct job_set_info_request, completion_key) == 24 );
+C_ASSERT( FIELD_OFFSET(struct job_set_info_request, completion_port) == 32 );
+C_ASSERT( FIELD_OFFSET(struct job_set_info_request, limit_flags) == 36 );
+C_ASSERT( FIELD_OFFSET(struct job_set_info_request, active_process_limit) == 40 );
+C_ASSERT( sizeof(struct job_set_info_request) == 48 );
+C_ASSERT( FIELD_OFFSET(struct job_query_info_request, handle) == 12 );
+C_ASSERT( sizeof(struct job_query_info_request) == 16 );
+C_ASSERT( FIELD_OFFSET(struct job_query_info_reply, total_processes) == 8 );
+C_ASSERT( FIELD_OFFSET(struct job_query_info_reply, active_processes) == 12 );
+C_ASSERT( sizeof(struct job_query_info_reply) == 16 );
+C_ASSERT( FIELD_OFFSET(struct job_pid_list_request, handle) == 12 );
+C_ASSERT( sizeof(struct job_pid_list_request) == 16 );
+C_ASSERT( FIELD_OFFSET(struct job_pid_list_reply, processes) == 8 );
+C_ASSERT( sizeof(struct job_pid_list_reply) == 16 );
 C_ASSERT( FIELD_OFFSET(struct get_new_process_info_request, info) == 12 );
 C_ASSERT( sizeof(struct get_new_process_info_request) == 16 );
 C_ASSERT( FIELD_OFFSET(struct get_new_process_info_reply, success) == 8 );

@@ -620,52 +620,54 @@ NTSTATUS WINAPI NtQueryInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS c
  */
 NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS class, PVOID info, ULONG len )
 {
-    NTSTATUS status;
-    PJOBOBJECT_ASSOCIATE_COMPLETION_PORT cInfo;
+    NTSTATUS status = STATUS_SUCCESS;
+    PJOBOBJECT_BASIC_LIMIT_INFORMATION basic_limit = NULL;
+    PJOBOBJECT_EXTENDED_LIMIT_INFORMATION extended_limit = NULL;
+    PJOBOBJECT_ASSOCIATE_COMPLETION_PORT associate_completion = NULL;
 
     TRACE( "(%p, %u, %p, %u)\n", handle, class, info, len );
 
-    switch(class)
+    SERVER_START_REQ( job_set_info )
     {
-    case JobObjectExtendedLimitInformation:
-        if(len != sizeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION))
-            return STATUS_INVALID_PARAMETER;
-
-        SERVER_START_REQ( job_set_limit )
+        req->info_class = class;
+        req->handle = wine_server_obj_handle(handle);
+        switch(class)
         {
-            req->handle = wine_server_obj_handle(handle);
-            req->limit_flags = ((PJOBOBJECT_EXTENDED_LIMIT_INFORMATION)info)->BasicLimitInformation.LimitFlags;
-            status = wine_server_call(req);
-        }
-        SERVER_END_REQ;
-        break;
-    case JobObjectAssociateCompletionPortInformation:
-        if(len != sizeof(JOBOBJECT_ASSOCIATE_COMPLETION_PORT))
-            return STATUS_INVALID_PARAMETER;
 
-        cInfo = (PJOBOBJECT_ASSOCIATE_COMPLETION_PORT)info;
+        case JobObjectExtendedLimitInformation:
+            if (len != sizeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION))
+                return STATUS_INVALID_PARAMETER;
+            extended_limit = info;
+            basic_limit = &extended_limit->BasicLimitInformation;
+            if (basic_limit->LimitFlags & ~JOB_OBJECT_EXTENDED_LIMIT_VALID_FLAGS)
+                return STATUS_INVALID_PARAMETER;
+            goto basic_limits;
 
-        SERVER_START_REQ( job_set_completion )
-        {
-            req->handle = wine_server_obj_handle(handle);
-            req->CompletionKey = wine_server_client_ptr(cInfo->CompletionKey);
-            req->CompletionPort = wine_server_obj_handle(cInfo->CompletionPort);
-            status = wine_server_call(req);
+        case JobObjectBasicLimitInformation:
+            if(len != sizeof(JOBOBJECT_BASIC_LIMIT_INFORMATION))
+                return STATUS_INVALID_PARAMETER;
+            basic_limit = info;
+            if (basic_limit->LimitFlags & ~JOB_OBJECT_BASIC_LIMIT_VALID_FLAGS)
+                return STATUS_INVALID_PARAMETER;
+        basic_limits:
+            req->limit_flags = basic_limit->LimitFlags;
+            req->active_process_limit = basic_limit->ActiveProcessLimit;
+            break;
+
+        case JobObjectAssociateCompletionPortInformation:
+            if(len != sizeof(JOBOBJECT_ASSOCIATE_COMPLETION_PORT))
+                return STATUS_INVALID_PARAMETER;
+            associate_completion = info;
+            req->completion_key = wine_server_client_ptr(associate_completion->CompletionKey);
+            req->completion_port = wine_server_obj_handle(associate_completion->CompletionPort);
+            break;
+
+        default:
+            status = STATUS_INVALID_INFO_CLASS;
         }
-        SERVER_END_REQ;
-        break;
-    case JobObjectBasicAccountingInformation:
-    case JobObjectBasicLimitInformation:
-    case JobObjectBasicProcessIdList:
-    case JobObjectBasicUIRestrictions:
-    case JobObjectSecurityLimitInformation:
-    case JobObjectEndOfJobTimeInformation:
-    case JobObjectBasicAndIoAccountingInformation:
-        status = STATUS_SUCCESS;
-        break;
-    default:
-        status = STATUS_INVALID_INFO_CLASS;
+        status = wine_server_call(req);
     }
+    SERVER_END_REQ;
 
     return status;
 }

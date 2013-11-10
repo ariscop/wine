@@ -715,15 +715,27 @@ struct rawinput_device
     obj_handle_t process_handle;
 @END
 
-@REQ(job_set_completion)
+@REQ(job_set_info)
     obj_handle_t handle;
-    client_ptr_t CompletionKey;
-    obj_handle_t CompletionPort;
+    int          info_class;
+    client_ptr_t completion_key;
+    obj_handle_t completion_port;
+    unsigned int limit_flags;
+    int          active_process_limit;
 @END
 
-@REQ(job_set_limit)
+@REQ(job_query_info)
     obj_handle_t handle;
-    int          limit_flags;
+@REPLY
+    int          total_processes;
+    int          active_processes;
+@END
+
+@REQ(job_pid_list)
+    obj_handle_t handle;
+@REPLY
+    data_size_t  processes;
+    VARARG(pids,ints,processes);
 @END
 
 /* Retrieve information about a newly started process */
