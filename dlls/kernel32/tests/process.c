@@ -2339,21 +2339,22 @@ static void test_JobObject(void) {
     info_len = sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST);
     pid_list = HeapAlloc(GetProcessHeap(), 0, info_len);
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
-    todo_wine ok(!ret && GetLastError() == ERROR_MORE_DATA,
+    todo_wine ok(!ret, "QueryInformationJobObject expected failure\n");
+    todo_wine ok(GetLastError() == ERROR_MORE_DATA,
         "QueryInformationJobObject (%d) (ret_len: %d)\n", GetLastError(), ret_len);
-    info_len = ret_len;
+
+    info_len = sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST) + sizeof(ULONG_PTR) + sizeof(ULONG_PTR);
+    ok(ret_len >= info_len, "ret_len (%d) < info_len (%d)\n", ret_len, info_len);
     pid_list = HeapReAlloc(GetProcessHeap(), 0, pid_list, info_len);
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
     todo_wine ok(ret, "QueryInformationJobObject (%d)", GetLastError());
     ok(info_len >= ret_len,
         "Expected info_len (%d) >= ret_len (%d)\n", info_len, ret_len);
-    if(ret) {
-        expect_eq_d(3, pid_list->NumberOfAssignedProcesses);
-        expect_eq_d(3, pid_list->NumberOfProcessIdsInList);
-        expect_eq_d(GetCurrentProcessId(), pid_list->ProcessIdList[0]);
-        expect_eq_d(pi[0].dwProcessId, pid_list->ProcessIdList[1]);
-        expect_eq_d(pi[1].dwProcessId, pid_list->ProcessIdList[2]);
-    }
+    expect_eq_d(3, pid_list->NumberOfAssignedProcesses);
+    expect_eq_d(3, pid_list->NumberOfProcessIdsInList);
+    expect_eq_d(GetCurrentProcessId(), pid_list->ProcessIdList[0]);
+    expect_eq_d(pi[0].dwProcessId, pid_list->ProcessIdList[1]);
+    expect_eq_d(pi[1].dwProcessId, pid_list->ProcessIdList[2]);
 
     TerminateProcess(pi[0].hProcess, STATUS_ACCESS_VIOLATION);
     WaitForSingleObject(pi[0].hProcess, 1000);
