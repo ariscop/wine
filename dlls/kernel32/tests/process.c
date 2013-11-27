@@ -42,6 +42,12 @@
       ok((expected) == value, "Expected " #actual " to be %d (" #expected ") is %d\n", \
           (expected), value); \
     } while (0)
+#define expect_eq_ud(expected, actual) \
+    do { \
+      unsigned int value = (actual); \
+      ok((expected) == value, "Expected " #actual " to be %ud (" #expected ") is %ud\n", \
+          (expected), value); \
+    } while (0)
 #define expect_eq_s(expected, actual) \
     do { \
       LPCSTR value = (actual); \
@@ -2131,7 +2137,7 @@ static void test_JobObject(void) {
     sprintf(buffer, "\"%s\" tests/process.c ignored \"%s\"", selfname, "wait");
 
     IOPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
-    ok(IOPort != NULL, "CreateIoCompletionPort (%d)", GetLastError());
+    ok(IOPort != NULL, "CreateIoCompletionPort (%d)\n", GetLastError());
 
     JobObject = pCreateJobObjectW(NULL, NULL);
     ok(JobObject != NULL, "CreateJobObject (%d)\n", GetLastError());
@@ -2263,7 +2269,7 @@ static void test_JobObject(void) {
     ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
     ret = pSetInformationJobObject(JobObject_2, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
-    todo_wine ok(!ret, "SetInformationJobObject Expected failure");
+    todo_wine ok(!ret, "SetInformationJobObject Expected failure\n");
     expect_eq_d(ERROR_INVALID_PARAMETER, GetLastError());
 
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si[0], &pi[0]);
@@ -2329,7 +2335,7 @@ static void test_JobObject(void) {
 
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicAccountingInformation, &acct_info, sizeof(acct_info), &ret_len);
     todo_wine ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
-    todo_wine expect_eq_d(sizeof(acct_info), ret_len);
+    todo_wine expect_eq_ud(sizeof(acct_info), ret_len);
     if(ret) {
         expect_eq_d(8, acct_info.TotalProcesses);
         expect_eq_d(3, acct_info.ActiveProcesses);
@@ -2347,7 +2353,7 @@ static void test_JobObject(void) {
     ok(ret_len >= info_len, "ret_len (%d) < info_len (%d)\n", ret_len, info_len);
     pid_list = HeapReAlloc(GetProcessHeap(), 0, pid_list, info_len);
     ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
-    todo_wine ok(ret, "QueryInformationJobObject (%d)", GetLastError());
+    todo_wine ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
     ok(info_len >= ret_len,
         "Expected info_len (%d) >= ret_len (%d)\n", info_len, ret_len);
     expect_eq_d(3, pid_list->NumberOfAssignedProcesses);
