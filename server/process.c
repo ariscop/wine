@@ -147,7 +147,8 @@ static struct job *create_job_object( struct directory *root, const struct unico
 struct job
 {
     struct object obj;             /* object header */
-    struct list processes;
+    struct list process_list;
+    struct list active_process_list;
     int signaled;
     int active_processes;          /* count of running processes */
     int total_processes;           /* count of processes added */
@@ -202,7 +203,8 @@ static struct job *create_job_object( struct directory *root, const struct unico
             job->active_process_limit = 0;
             job->completion_key = 0;
             job->completion_port = NULL;
-            list_init(&job->processes);
+            list_init(&job->process_list);
+            list_init(&job->active_process_list);
         }
     }
     return job;
@@ -261,7 +263,8 @@ static int job_add_process( struct job *job, struct process *process )
     job->active_processes++;
     job->total_processes++;
 
-    list_add_tail(&job->processes, &process->job_entry);
+    list_add_tail(&job->process_list, &process->job_entry);
+    list_add_tail(&job->active_process_list, &process->job_active);
 
     job_add_completion(job, JOB_OBJECT_MSG_NEW_PROCESS, get_process_id(process));
     
@@ -277,6 +280,8 @@ static void job_remove_process( struct process *process )
 
     assert(job->obj.ops == &job_ops);
     assert(job->active_processes > 0);
+    assert(job->active_processes == list_count(&job->active_process_list));
+    list_remove(&process->job_active);
     job->active_processes--;
 
     if(!job->terminating) {
@@ -304,7 +309,7 @@ static void job_dump_info( struct object *obj, int verbose )
     struct job *job = (struct job *)obj;
     assert( obj->ops == &job_ops );
 
-    fprintf( stderr, "Job processes=%d\n", list_count(&job->processes) );
+    fprintf( stderr, "Job processes=%d\n", list_count(&job->process_list) );
 }
 
 static int job_signaled( struct object *obj, struct wait_queue_entry *entry )
@@ -527,6 +532,7 @@ struct thread *create_process( int fd, struct thread *parent_thread, int inherit
     process->rawinput_kbd    = NULL;
     list_init( &process->thread_list );
     list_init( &process->job_entry );
+    list_init( &process->job_active );
     list_init( &process->locks );
     list_init( &process->classes );
     list_init( &process->dlls );
@@ -1562,7 +1568,7 @@ DECL_HANDLER(process_in_job)
 
     set_error(STATUS_PROCESS_NOT_IN_JOB);
 
-    LIST_FOR_EACH_ENTRY(itter, &job->processes, struct process, job_entry )
+    LIST_FOR_EACH_ENTRY(itter, &job->process_list, struct process, job_entry )
     {
         if(itter == process) {
             set_error(STATUS_PROCESS_IN_JOB);
@@ -1585,7 +1591,7 @@ DECL_HANDLER(terminate_job)
 
     job->terminating = 1;
 
-    LIST_FOR_EACH_ENTRY(process, &job->processes, struct process, job_entry )
+    LIST_FOR_EACH_ENTRY(process, &job->active_process_list, struct process, job_active )
     {
         terminate_process(process, NULL, req->status);
     }
@@ -1622,7 +1628,7 @@ DECL_HANDLER(job_set_info)
         break;
 
     default:
-        set_error (STATUS_NOT_IMPLEMENTED);
+        set_error (STATUS_INVALID_INFO_CLASS);
     }
 
 error:

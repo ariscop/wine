@@ -63,6 +63,7 @@ struct process
     struct fd           *msg_fd;          /* fd for sendmsg/recvmsg */
     struct job          *job;             /* job object ascoicated with this process */
     struct list          job_entry;       /* list entry for job object */
+    struct list          job_active;      /* list entry for job object */
     process_id_t         id;              /* id of the process */
     process_id_t         group_id;        /* group id of the process */
     struct timeout_user *sigkill_timeout; /* timeout for final SIGKILL */
