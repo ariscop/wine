@@ -293,6 +293,7 @@ DECL_HANDLER(set_process_winstation);
 DECL_HANDLER(enum_winstation);
 DECL_HANDLER(create_desktop);
 DECL_HANDLER(open_desktop);
+DECL_HANDLER(open_input_desktop);
 DECL_HANDLER(close_desktop);
 DECL_HANDLER(get_thread_desktop);
 DECL_HANDLER(set_thread_desktop);
@@ -559,6 +560,7 @@ static const req_handler req_handlers[REQ_NB_REQUESTS] =
     (req_handler)req_enum_winstation,
     (req_handler)req_create_desktop,
     (req_handler)req_open_desktop,
+    (req_handler)req_open_input_desktop,
     (req_handler)req_close_desktop,
     (req_handler)req_get_thread_desktop,
     (req_handler)req_set_thread_desktop,
@@ -671,8 +673,9 @@ C_ASSERT( FIELD_OFFSET(struct new_process_request, process_access) == 28 );
 C_ASSERT( FIELD_OFFSET(struct new_process_request, process_attr) == 32 );
 C_ASSERT( FIELD_OFFSET(struct new_process_request, thread_access) == 36 );
 C_ASSERT( FIELD_OFFSET(struct new_process_request, thread_attr) == 40 );
-C_ASSERT( FIELD_OFFSET(struct new_process_request, info_size) == 44 );
-C_ASSERT( sizeof(struct new_process_request) == 48 );
+C_ASSERT( FIELD_OFFSET(struct new_process_request, cpu) == 44 );
+C_ASSERT( FIELD_OFFSET(struct new_process_request, info_size) == 48 );
+C_ASSERT( sizeof(struct new_process_request) == 56 );
 C_ASSERT( FIELD_OFFSET(struct new_process_reply, info) == 8 );
 C_ASSERT( FIELD_OFFSET(struct new_process_reply, pid) == 12 );
 C_ASSERT( FIELD_OFFSET(struct new_process_reply, phandle) == 16 );
@@ -1779,6 +1782,12 @@ C_ASSERT( FIELD_OFFSET(struct open_desktop_request, attributes) == 24 );
 C_ASSERT( sizeof(struct open_desktop_request) == 32 );
 C_ASSERT( FIELD_OFFSET(struct open_desktop_reply, handle) == 8 );
 C_ASSERT( sizeof(struct open_desktop_reply) == 16 );
+C_ASSERT( FIELD_OFFSET(struct open_input_desktop_request, flags) == 12 );
+C_ASSERT( FIELD_OFFSET(struct open_input_desktop_request, access) == 16 );
+C_ASSERT( FIELD_OFFSET(struct open_input_desktop_request, attributes) == 20 );
+C_ASSERT( sizeof(struct open_input_desktop_request) == 24 );
+C_ASSERT( FIELD_OFFSET(struct open_input_desktop_reply, handle) == 8 );
+C_ASSERT( sizeof(struct open_input_desktop_reply) == 16 );
 C_ASSERT( FIELD_OFFSET(struct close_desktop_request, handle) == 12 );
 C_ASSERT( sizeof(struct close_desktop_request) == 16 );
 C_ASSERT( FIELD_OFFSET(struct get_thread_desktop_request, tid) == 12 );

@@ -179,6 +179,7 @@ static const struct wined3d_extension_map gl_extension_map[] =
     {"GL_EXT_texture_env_dot3",             EXT_TEXTURE_ENV_DOT3          },
     {"GL_EXT_texture_filter_anisotropic",   EXT_TEXTURE_FILTER_ANISOTROPIC},
     {"GL_EXT_texture_lod_bias",             EXT_TEXTURE_LOD_BIAS          },
+    {"GL_EXT_texture_mirror_clamp",         EXT_TEXTURE_MIRROR_CLAMP      },
     {"GL_EXT_texture_sRGB",                 EXT_TEXTURE_SRGB              },
     {"GL_EXT_texture_sRGB_decode",          EXT_TEXTURE_SRGB_DECODE       },
     {"GL_EXT_vertex_array_bgra",            EXT_VERTEX_ARRAY_BGRA         },
@@ -2377,7 +2378,7 @@ static enum wined3d_pci_device wined3d_guess_card(const struct wined3d_gl_info *
      * size of the database can be made quite small because when you know what
      * type of 3d functionality a card has, you know to which GPU family the
      * GPU must belong. Because of this you only have to check a small part of
-     * the renderer string to distinguishes between different models from that
+     * the renderer string to distinguish between different models from that
      * family.
      *
      * The code also selects a default amount of video memory which we will
@@ -2932,6 +2933,11 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter)
         TRACE("Occlusion query counter has %d bits.\n", counter_bits);
         if (!counter_bits)
             gl_info->supported[ARB_OCCLUSION_QUERY] = FALSE;
+    }
+    if (!gl_info->supported[ATI_TEXTURE_MIRROR_ONCE] && gl_info->supported[EXT_TEXTURE_MIRROR_CLAMP])
+    {
+        TRACE(" IMPLIED: ATI_texture_mirror_once support (by EXT_texture_mirror_clamp).\n");
+        gl_info->supported[ATI_TEXTURE_MIRROR_ONCE] = TRUE;
     }
     if (!gl_info->supported[ARB_TEXTURE_MIRROR_CLAMP_TO_EDGE] && gl_info->supported[ATI_TEXTURE_MIRROR_ONCE])
     {

@@ -966,7 +966,6 @@ static void test_waittxempty(void)
             SetLastError(0xdeadbeef);
             res = WaitCommEvent(hcom, &evtmask, &ovl_wait2);
             ok(!res, "WaitCommEvent should fail if there is a pending wait\n");
-todo_wine
             ok(GetLastError() == ERROR_INVALID_PARAMETER, "expected ERROR_INVALID_PARAMETER, got %d\n", GetLastError());
             CloseHandle(ovl_wait2.hEvent);
 
@@ -1070,7 +1069,7 @@ static void test_LoopbackRead(void)
     ok(read == sizeof(tbuf),"ReadFile read %d bytes, expected \"%s\"\n", read,rbuf);
 
     /* Now do the same with a slower Baud rate.
-       As we request more characters then written, we will hit the timeout
+       As we request more characters than written, we will hit the timeout
     */
 
     ok(GetCommState(hcom, &dcb), "GetCommState failed\n");

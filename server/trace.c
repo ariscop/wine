@@ -1106,6 +1106,7 @@ static void dump_new_process_request( const struct new_process_request *req )
     fprintf( stderr, ", process_attr=%08x", req->process_attr );
     fprintf( stderr, ", thread_access=%08x", req->thread_access );
     fprintf( stderr, ", thread_attr=%08x", req->thread_attr );
+    dump_cpu_type( ", cpu=", &req->cpu );
     fprintf( stderr, ", info_size=%u", req->info_size );
     dump_varargs_startup_info( ", info=", min(cur_size,req->info_size) );
     dump_varargs_unicode_str( ", env=", cur_size );
@@ -3254,6 +3255,18 @@ static void dump_open_desktop_reply( const struct open_desktop_reply *req )
     fprintf( stderr, " handle=%04x", req->handle );
 }
 
+static void dump_open_input_desktop_request( const struct open_input_desktop_request *req )
+{
+    fprintf( stderr, " flags=%08x", req->flags );
+    fprintf( stderr, ", access=%08x", req->access );
+    fprintf( stderr, ", attributes=%08x", req->attributes );
+}
+
+static void dump_open_input_desktop_reply( const struct open_input_desktop_reply *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
 static void dump_close_desktop_request( const struct close_desktop_request *req )
 {
     fprintf( stderr, " handle=%04x", req->handle );
@@ -4321,6 +4334,7 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_enum_winstation_request,
     (dump_func)dump_create_desktop_request,
     (dump_func)dump_open_desktop_request,
+    (dump_func)dump_open_input_desktop_request,
     (dump_func)dump_close_desktop_request,
     (dump_func)dump_get_thread_desktop_request,
     (dump_func)dump_set_thread_desktop_request,
@@ -4584,6 +4598,7 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_enum_winstation_reply,
     (dump_func)dump_create_desktop_reply,
     (dump_func)dump_open_desktop_reply,
+    (dump_func)dump_open_input_desktop_reply,
     NULL,
     (dump_func)dump_get_thread_desktop_reply,
     NULL,
@@ -4847,6 +4862,7 @@ static const char * const req_names[REQ_NB_REQUESTS] = {
     "enum_winstation",
     "create_desktop",
     "open_desktop",
+    "open_input_desktop",
     "close_desktop",
     "get_thread_desktop",
     "set_thread_desktop",
@@ -4977,6 +4993,11 @@ static const struct
     { "INVALID_DEVICE_REQUEST",      STATUS_INVALID_DEVICE_REQUEST },
     { "INVALID_FILE_FOR_SECTION",    STATUS_INVALID_FILE_FOR_SECTION },
     { "INVALID_HANDLE",              STATUS_INVALID_HANDLE },
+    { "INVALID_IMAGE_FORMAT",        STATUS_INVALID_IMAGE_FORMAT },
+    { "INVALID_IMAGE_NE_FORMAT",     STATUS_INVALID_IMAGE_NE_FORMAT },
+    { "INVALID_IMAGE_NOT_MZ",        STATUS_INVALID_IMAGE_NOT_MZ },
+    { "INVALID_IMAGE_PROTECT",       STATUS_INVALID_IMAGE_PROTECT },
+    { "INVALID_IMAGE_WIN_64",        STATUS_INVALID_IMAGE_WIN_64 },
     { "INVALID_PARAMETER",           STATUS_INVALID_PARAMETER },
     { "INVALID_SECURITY_DESCR",      STATUS_INVALID_SECURITY_DESCR },
     { "IO_TIMEOUT",                  STATUS_IO_TIMEOUT },

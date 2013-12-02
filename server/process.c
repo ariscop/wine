@@ -1095,6 +1095,11 @@ DECL_HANDLER(new_process)
         close( socket_fd );
         return;
     }
+    if (!is_cpu_supported( req->cpu ))
+    {
+        close( socket_fd );
+        return;
+    }
 
     if (!req->info_size)  /* create an orphaned process */
     {

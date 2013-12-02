@@ -734,7 +734,7 @@ static void InternetReadFile_chunked_test(void)
 {
     BOOL res;
     CHAR buffer[4000];
-    DWORD length;
+    DWORD length, got;
     const char *types[2] = { "*", NULL };
     HINTERNET hi, hic = 0, hor = 0;
 
@@ -814,7 +814,6 @@ static void InternetReadFile_chunked_test(void)
         trace("got %u available\n",length);
         if (length)
         {
-            DWORD got;
             char *buffer = HeapAlloc(GetProcessHeap(),0,length+1);
 
             res = InternetReadFile(hor,buffer,length,&got);
@@ -828,7 +827,13 @@ static void InternetReadFile_chunked_test(void)
             if (!got) break;
         }
         if (length == 0)
+        {
+            got = 0xdeadbeef;
+            res = InternetReadFile( hor, buffer, 1, &got );
+            ok( res, "InternetReadFile failed: %u\n", GetLastError() );
+            ok( !got, "got %u\n", got );
             break;
+        }
     }
 abort:
     trace("aborting\n");
@@ -2883,22 +2888,21 @@ static void test_connection_closing(int port)
 
     CLEAR_NOTIFIED(INTERNET_STATUS_COOKIE_SENT);
     CLEAR_NOTIFIED(INTERNET_STATUS_DETECTING_PROXY);
-    todo_wine CHECK_NOTIFIED(INTERNET_STATUS_CONNECTING_TO_SERVER);
-    todo_wine CHECK_NOTIFIED(INTERNET_STATUS_CONNECTED_TO_SERVER);
+    CHECK_NOTIFIED(INTERNET_STATUS_CONNECTING_TO_SERVER);
+    CHECK_NOTIFIED(INTERNET_STATUS_CONNECTED_TO_SERVER);
     CHECK_NOTIFIED(INTERNET_STATUS_SENDING_REQUEST);
     CHECK_NOTIFIED(INTERNET_STATUS_REQUEST_SENT);
     CHECK_NOTIFIED(INTERNET_STATUS_RECEIVING_RESPONSE);
     CHECK_NOTIFIED(INTERNET_STATUS_RESPONSE_RECEIVED);
     CHECK_NOTIFIED(INTERNET_STATUS_REQUEST_COMPLETE);
 
-    test_status_code_todo(req, 210);
+    test_status_code(req, 210);
 
     SET_OPTIONAL(INTERNET_STATUS_COOKIE_SENT);
     SET_OPTIONAL(INTERNET_STATUS_DETECTING_PROXY);
     SET_EXPECT(INTERNET_STATUS_CONNECTING_TO_SERVER);
     SET_EXPECT(INTERNET_STATUS_CONNECTED_TO_SERVER);
     SET_EXPECT(INTERNET_STATUS_SENDING_REQUEST);
-    SET_WINE_ALLOW(INTERNET_STATUS_SENDING_REQUEST);
     SET_EXPECT(INTERNET_STATUS_REQUEST_SENT);
     SET_EXPECT(INTERNET_STATUS_RECEIVING_RESPONSE);
     SET_EXPECT(INTERNET_STATUS_RESPONSE_RECEIVED);
@@ -2916,7 +2920,7 @@ static void test_connection_closing(int port)
     CLEAR_NOTIFIED(INTERNET_STATUS_DETECTING_PROXY);
     CHECK_NOTIFIED(INTERNET_STATUS_CONNECTING_TO_SERVER);
     CHECK_NOTIFIED(INTERNET_STATUS_CONNECTED_TO_SERVER);
-    todo_wine CHECK_NOTIFIED(INTERNET_STATUS_SENDING_REQUEST);
+    CHECK_NOTIFIED(INTERNET_STATUS_SENDING_REQUEST);
     CHECK_NOTIFIED(INTERNET_STATUS_REQUEST_SENT);
     CHECK_NOTIFIED(INTERNET_STATUS_RECEIVING_RESPONSE);
     CHECK_NOTIFIED(INTERNET_STATUS_RESPONSE_RECEIVED);
@@ -2924,7 +2928,7 @@ static void test_connection_closing(int port)
     CLEAR_NOTIFIED(INTERNET_STATUS_CONNECTION_CLOSED);
     CHECK_NOTIFIED(INTERNET_STATUS_REQUEST_COMPLETE);
 
-    test_status_code_todo(req, 200);
+    test_status_code(req, 200);
 
     SET_WINE_ALLOW(INTERNET_STATUS_CLOSING_CONNECTION);
     SET_WINE_ALLOW(INTERNET_STATUS_CONNECTION_CLOSED);

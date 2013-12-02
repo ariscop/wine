@@ -667,9 +667,11 @@ struct new_process_request
     unsigned int process_attr;
     unsigned int thread_access;
     unsigned int thread_attr;
+    cpu_type_t   cpu;
     data_size_t  info_size;
     /* VARARG(info,startup_info,info_size); */
     /* VARARG(env,unicode_str); */
+    char __pad_52[4];
 };
 struct new_process_reply
 {
@@ -3175,6 +3177,7 @@ struct set_serial_info_reply
 #define SERIALINFO_SET_TIMEOUTS  0x01
 #define SERIALINFO_SET_MASK      0x02
 #define SERIALINFO_PENDING_WRITE 0x04
+#define SERIALINFO_PENDING_WAIT  0x08
 
 
 
@@ -3888,6 +3891,22 @@ struct open_desktop_request
     char __pad_28[4];
 };
 struct open_desktop_reply
+{
+    struct reply_header __header;
+    obj_handle_t handle;
+    char __pad_12[4];
+};
+
+
+
+struct open_input_desktop_request
+{
+    struct request_header __header;
+    unsigned int flags;
+    unsigned int access;
+    unsigned int attributes;
+};
+struct open_input_desktop_reply
 {
     struct reply_header __header;
     obj_handle_t handle;
@@ -5332,6 +5351,7 @@ enum request
     REQ_enum_winstation,
     REQ_create_desktop,
     REQ_open_desktop,
+    REQ_open_input_desktop,
     REQ_close_desktop,
     REQ_get_thread_desktop,
     REQ_set_thread_desktop,
@@ -5599,6 +5619,7 @@ union generic_request
     struct enum_winstation_request enum_winstation_request;
     struct create_desktop_request create_desktop_request;
     struct open_desktop_request open_desktop_request;
+    struct open_input_desktop_request open_input_desktop_request;
     struct close_desktop_request close_desktop_request;
     struct get_thread_desktop_request get_thread_desktop_request;
     struct set_thread_desktop_request set_thread_desktop_request;
@@ -5864,6 +5885,7 @@ union generic_reply
     struct enum_winstation_reply enum_winstation_reply;
     struct create_desktop_reply create_desktop_reply;
     struct open_desktop_reply open_desktop_reply;
+    struct open_input_desktop_reply open_input_desktop_reply;
     struct close_desktop_reply close_desktop_reply;
     struct get_thread_desktop_reply get_thread_desktop_reply;
     struct set_thread_desktop_reply set_thread_desktop_reply;
