@@ -207,6 +207,7 @@ void *alloc_object( const struct object_ops *ops )
     if (obj)
     {
         obj->refcount = 1;
+        obj->handlecount = 0;
         obj->ops      = ops;
         obj->name     = NULL;
         obj->sd       = NULL;
