@@ -2479,7 +2479,7 @@ static void test_CompletionPort(void) {
     Port.CompletionKey = JobObject;
     Port.CompletionPort = IOPort;
     ret = pSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
-    todo_wine ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
     create_process("wait", &pi);
     ret = pAssignProcessToJobObject(JobObject, pi.hProcess);
@@ -2488,9 +2488,9 @@ static void test_CompletionPort(void) {
     TerminateProcess(pi.hProcess, 0);
     winetest_wait_child_process(pi.hProcess);
 
-    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,         JobObject, pi.dwProcessId, 0);
-    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS,        JobObject, pi.dwProcessId, 0);
-    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,         JobObject, pi.dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS,        JobObject, pi.dwProcessId, 0);
+    test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
 }
 
 static void test_inherit(HANDLE JobObject) {

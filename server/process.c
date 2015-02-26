@@ -152,7 +152,10 @@ struct job
     struct list process_list;
     struct list active_process_list;
     int active_processes;          /* count of running processes */
+    int terminating;
     int limit_flags;
+    struct completion *completion_port;
+    apc_param_t completion_key;
 };
 
 static const struct object_ops job_ops =
@@ -190,7 +193,10 @@ static struct job *create_job_object( struct directory *root, const struct unico
                                                    DACL_SECURITY_INFORMATION|
                                                    SACL_SECURITY_INFORMATION );
             job->active_processes = 0;
+            job->terminating = 0;
             job->limit_flags = 0;
+            job->completion_port = NULL;
+            job->completion_key = 0;
             list_init(&job->process_list);
             list_init(&job->active_process_list);
         }
@@ -217,6 +223,17 @@ static unsigned int job_map_access( struct object *obj, unsigned int access )
     if (access & GENERIC_EXECUTE) access |= STANDARD_RIGHTS_EXECUTE;
     if (access & GENERIC_ALL)     access |= JOB_OBJECT_ALL_ACCESS;
     return access & ~(GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL);
+}
+
+static void job_add_completion( struct job *job, apc_param_t msg, apc_param_t pid )
+{
+    if(job->completion_port)
+        add_completion(
+            job->completion_port,
+            job->completion_key,
+            pid,
+            STATUS_SUCCESS,
+            msg);
 }
 
 #define BREAKAWAY_OK (JOB_OBJECT_LIMIT_BREAKAWAY_OK | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK)
@@ -248,6 +265,8 @@ static int job_add_process( struct job *job, struct process *process )
     list_add_tail(&job->process_list, &process->job_entry);
     list_add_tail(&job->active_process_list, &process->job_active);
 
+    job_add_completion(job, JOB_OBJECT_MSG_NEW_PROCESS, get_process_id(process));
+
     return 1;
 }
 
@@ -263,11 +282,23 @@ static void job_remove_process( struct process *process )
     assert(job->active_processes == list_count(&job->active_process_list));
     list_remove(&process->job_active);
     job->active_processes--;
+
+    if(!job->terminating)
+        job_add_completion(job, JOB_OBJECT_MSG_EXIT_PROCESS, get_process_id(process));
+
+    if(job->active_processes == 0) {
+        job_add_completion(job, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, 0);
+        job->terminating = 0;
+    }
 }
 
 static void terminate_job( struct job *job, int status )
 {
     struct process *process;
+
+    /* Windows doesn't report completion events for processes
+     * terminated by TerminateProcess, we do the same */
+    job->terminating = 1;
 
     LIST_FOR_EACH_ENTRY(process, &job->active_process_list, struct process, job_active )
     {
@@ -280,6 +311,9 @@ static void job_destroy( struct object *obj )
     struct job *job = (struct job*)obj;
     assert(obj->ops == &job_ops);
     assert(job->active_processes == 0);
+
+    if(job->completion_port)
+        release_object(job->completion_port);
 }
 
 static void job_dump_info( struct object *obj, int verbose )
@@ -1683,5 +1717,29 @@ DECL_HANDLER(job_set_limits)
 
     job->limit_flags = req->limit_flags;
 
+    release_object(job);
+}
+
+DECL_HANDLER(job_set_completion)
+{
+    struct job *job;
+    struct completion *port;
+
+    if(!(job = get_job_obj( current->process, req->handle, JOB_OBJECT_SET_ATTRIBUTES )))
+        return;
+
+    if (job->completion_port) {
+        set_error (STATUS_INVALID_PARAMETER);
+        goto error;
+    }
+
+    port = get_completion_obj( current->process, req->port, IO_COMPLETION_MODIFY_STATE );
+    if (!port)
+        goto error;
+
+    job->completion_port = port;
+    job->completion_key = req->key;
+
+error:
     release_object(job);
 }

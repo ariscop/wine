@@ -656,6 +656,7 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
     NTSTATUS status = STATUS_SUCCESS;
     PJOBOBJECT_BASIC_LIMIT_INFORMATION basic_limit = NULL;
     PJOBOBJECT_EXTENDED_LIMIT_INFORMATION extended_limit = NULL;
+    PJOBOBJECT_ASSOCIATE_COMPLETION_PORT port_info = NULL;
 
     TRACE( "(%p, %u, %p, %u)\n", handle, class, info, len );
 
@@ -682,6 +683,20 @@ NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS cla
         {
             req->handle = wine_server_obj_handle(handle);
             req->limit_flags = basic_limit->LimitFlags;
+            status = wine_server_call(req);
+        }
+        SERVER_END_REQ;
+        break;
+
+    case JobObjectAssociateCompletionPortInformation:
+        if(len != sizeof(JOBOBJECT_ASSOCIATE_COMPLETION_PORT))
+            return STATUS_INVALID_PARAMETER;
+        port_info = info;
+        SERVER_START_REQ( job_set_completion )
+        {
+            req->handle = wine_server_obj_handle(handle);
+            req->port = wine_server_obj_handle(port_info->CompletionPort);
+            req->key = wine_server_client_ptr(port_info->CompletionKey);
             status = wine_server_call(req);
         }
         SERVER_END_REQ;
