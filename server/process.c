@@ -145,6 +145,7 @@ static struct object_type *job_get_type( struct object *obj );
 static struct job *get_job_obj( struct process *process, obj_handle_t handle, unsigned int access );
 static struct job *create_job_object( struct directory *root, const struct unicode_str *name,
                                       unsigned int attr, const struct security_descriptor *sd );
+static int job_close_handle( struct object *, struct process *process, obj_handle_t handle );
 
 struct job
 {
@@ -174,7 +175,7 @@ static const struct object_ops job_ops =
     default_set_sd,                /* set_sd */
     no_lookup_name,                /* lookup_name */
     no_open_file,                  /* open_file */
-    no_close_handle,               /* close_handle */
+    job_close_handle,              /* close_handle */
     job_destroy                    /* destroy */
 };
 
@@ -304,6 +305,20 @@ static void terminate_job( struct job *job, int status )
     {
         terminate_process(process, NULL, status);
     }
+}
+
+static int job_close_handle( struct object *obj, struct process *process, obj_handle_t handle )
+{
+    struct job *job = (struct job*)obj;
+    assert(obj->ops == &job_ops);
+
+    /* Called before the handle cout is decremented
+       FIXME: should probbaly have an event for this instead of
+       directly checking handlecount */
+    if (obj->handlecount == 1 && job->limit_flags & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+        terminate_job( job, 0 );
+
+    return 1;
 }
 
 static void job_destroy( struct object *obj )
