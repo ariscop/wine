@@ -2236,13 +2236,13 @@ static void test_IsProcessInJob(void) {
     ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
 
     ret = pIsProcessInJob(pi.hProcess, JobObject, &out);
-    todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+    ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
 
     TerminateProcess(pi.hProcess, 0);
     winetest_wait_child_process(pi.hProcess);
 
     ret = pIsProcessInJob(pi.hProcess, JobObject, &out);
-    todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+    ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
@@ -2339,8 +2339,8 @@ static void test_BreakawayOk(HANDLE JobObject) {
     snprintf(buffer, MAX_PATH, "\"%s\" tests/process.c job \"%s\"", selfname, "exit");
 
     ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si, &pi);
-    todo_wine ok(!ret, "Expected failure\n");
-    todo_wine expect_eq_d(ERROR_ACCESS_DENIED, GetLastError());
+    ok(!ret, "Expected failure\n");
+    expect_eq_d(ERROR_ACCESS_DENIED, GetLastError());
 
     limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
     ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
@@ -2479,7 +2479,7 @@ static void test_CompletionPort(void) {
     Port.CompletionKey = JobObject;
     Port.CompletionPort = IOPort;
     ret = pSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
-    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+    todo_wine ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
 
     create_process("wait", &pi);
     ret = pAssignProcessToJobObject(JobObject, pi.hProcess);
@@ -2508,7 +2508,7 @@ static void test_inherit(HANDLE JobObject) {
     winetest_wait_child_process(pi.hProcess);
 
     ret = pIsProcessInJob(pi.hProcess, JobObject, &out);
-    todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+    ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
 }
 
 static void doJobChild(void)
