@@ -67,6 +67,13 @@ static BOOL   (WINAPI *pQueryFullProcessImageNameA)(HANDLE hProcess, DWORD dwFla
 static BOOL   (WINAPI *pQueryFullProcessImageNameW)(HANDLE hProcess, DWORD dwFlags, LPWSTR lpExeName, PDWORD lpdwSize);
 static DWORD  (WINAPI *pK32GetProcessImageFileNameA)(HANDLE,LPSTR,DWORD);
 static struct _TEB * (WINAPI *pNtCurrentTeb)(void);
+static HANDLE (WINAPI *pCreateJobObjectW)(LPSECURITY_ATTRIBUTES sa, LPCWSTR name);
+static BOOL   (WINAPI *pAssignProcessToJobObject)(HANDLE job, HANDLE process);
+static BOOL   (WINAPI *pIsProcessInJob)(HANDLE process, HANDLE job, PBOOL result);
+static BOOL   (WINAPI *pTerminateJobObject)(HANDLE job, UINT exit_code);
+static BOOL   (WINAPI *pQueryInformationJobObject)(HANDLE job, JOBOBJECTINFOCLASS class, LPVOID info, DWORD len, LPDWORD lpReturnLength);
+static BOOL   (WINAPI *pSetInformationJobObject)(HANDLE job, JOBOBJECTINFOCLASS class, LPVOID info, DWORD len);
+static HANDLE (WINAPI *pCreateIoCompletionPort)(HANDLE file, HANDLE existing_port, ULONG_PTR key, DWORD threads);
 
 /* ############################### */
 static char     base[MAX_PATH];
@@ -213,6 +220,13 @@ static BOOL init(void)
     pQueryFullProcessImageNameW = (void *) GetProcAddress(hkernel32, "QueryFullProcessImageNameW");
     pK32GetProcessImageFileNameA = (void *) GetProcAddress(hkernel32, "K32GetProcessImageFileNameA");
     pNtCurrentTeb = (void *)GetProcAddress( hntdll, "NtCurrentTeb" );
+    pCreateJobObjectW = (void *) GetProcAddress(hkernel32, "CreateJobObjectW");
+    pAssignProcessToJobObject = (void *) GetProcAddress(hkernel32, "AssignProcessToJobObject");
+    pIsProcessInJob = (void *) GetProcAddress(hkernel32, "IsProcessInJob");
+    pTerminateJobObject = (void *) GetProcAddress(hkernel32, "TerminateJobObject");
+    pQueryInformationJobObject = (void *) GetProcAddress(hkernel32, "QueryInformationJobObject");
+    pSetInformationJobObject = (void *) GetProcAddress(hkernel32, "SetInformationJobObject");
+    pCreateIoCompletionPort = (void *) GetProcAddress(hkernel32, "CreateIoCompletionPort");
     return TRUE;
 }
 
@@ -2165,20 +2179,369 @@ void test_StartupNoConsole(void)
     okChildInt("TEB", "hStdError", (DWORD_PTR)0);
     release_memory();
     assert(DeleteFileA(resfile) != 0);
+}
 
+static void _test_job_completion(HANDLE IOPort, DWORD eCompletionKey, HANDLE eCompletionValue, DWORD eOverlapped, DWORD wait)
+{
+    DWORD CompletionKey;
+    ULONG_PTR CompletionValue;
+    LPOVERLAPPED Overlapped;
+    BOOL ret;
+
+    ret = GetQueuedCompletionStatus(IOPort, &CompletionKey, &CompletionValue, &Overlapped, wait);
+
+    winetest_ok(ret, "GetQueuedCompletionStatus: %x\n", GetLastError());
+    if(ret)
+        winetest_ok(eCompletionKey == CompletionKey
+                 && eCompletionValue == (HANDLE)CompletionValue
+                 && eOverlapped == (DWORD_PTR)Overlapped,
+                 "Unexpected completion event: %x, %p, %p\n",
+                 CompletionKey, (void*)CompletionValue, (void*)Overlapped);
+
+}
+#define test_job_completion(a, b, c, d, e) (winetest_set_location(__FILE__,__LINE__), 0) ? 0 : _test_job_completion(a, b, c, d, e)
+
+static void _create_process(const char *file, int line, const char *command, LPPROCESS_INFORMATION pi)
+{
+    BOOL ret;
+    char buffer[MAX_PATH] = "";
+    STARTUPINFOA si = {0};
+    winetest_set_location(file, line);
+
+    snprintf(buffer, MAX_PATH, "\"%s\" tests/process.c job \"%s\" \"%s\" %d", selfname, command, file, line);
+    ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si, pi);
+    winetest_ok(ret, "CreateProcess (%d)\n", GetLastError());
+}
+#define create_process(cmd, pi) (_create_process(__FILE__, __LINE__, cmd, pi))
+
+static void test_IsProcessInJob(void) {
+    HANDLE JobObject;
+    PROCESS_INFORMATION pi;
+    BOOL ret;
+    BOOL out;
+
+    if(!pIsProcessInJob) {
+        win_skip("IsProcessInJob not available.\n");
+        return;
+    }
+
+    JobObject = pCreateJobObjectW(NULL, NULL);
+    ok(JobObject != NULL, "CreateJobObject (%d)\n", GetLastError());
+
+    create_process("wait", &pi);
+    ret = pIsProcessInJob(pi.hProcess, JobObject, &out);
+    ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
+
+    ret = pAssignProcessToJobObject(JobObject, pi.hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    ret = pIsProcessInJob(pi.hProcess, JobObject, &out);
+    todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+
+    TerminateProcess(pi.hProcess, 0);
+    winetest_wait_child_process(pi.hProcess);
+
+    ret = pIsProcessInJob(pi.hProcess, JobObject, &out);
+    todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    CloseHandle(JobObject);
+}
+
+static void test_TerminateJobObject(void) {
+    HANDLE JobObject;
+    PROCESS_INFORMATION pi;
+    BOOL ret;
+
+    JobObject = pCreateJobObjectW(NULL, NULL);
+    ok(JobObject != NULL, "CreateJobObject (%d)\n", GetLastError());
+
+    create_process("wait", &pi);
+    ret = pAssignProcessToJobObject(JobObject, pi.hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    ret = pTerminateJobObject( JobObject, 0 );
+    ok(ret, "TerminateJobObject (%d)\n", GetLastError());
+    winetest_wait_child_process(pi.hProcess);
+
+    CloseHandle(JobObject);
+}
+
+static void test_ProccessIdList(void) {
+    HANDLE JobObject;
+    PROCESS_INFORMATION pi[2];
+    PJOBOBJECT_BASIC_PROCESS_ID_LIST pid_list;
+    DWORD info_len;
+    DWORD ret_len;
+    BOOL ret;
+
+    JobObject = pCreateJobObjectW(NULL, NULL);
+    ok(JobObject != NULL, "CreateJobObject (%d)\n", GetLastError());
+
+
+    /* Only active processes are returned */
+    create_process("exit", &pi[0]);
+    ret = pAssignProcessToJobObject(JobObject, pi[0].hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+    winetest_wait_child_process(pi[0].hProcess);
+
+    create_process("wait", &pi[0]);
+    ret = pAssignProcessToJobObject(JobObject, pi[0].hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    create_process("wait", &pi[1]);
+    ret = pAssignProcessToJobObject(JobObject, pi[1].hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    SetLastError(ERROR_SUCCESS);
+    info_len = sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST);
+    pid_list = HeapAlloc(GetProcessHeap(), 0, info_len);
+    ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
+    ok(!ret, "QueryInformationJobObject expected failure\n");
+
+    todo_wine expect_eq_d(ERROR_MORE_DATA, GetLastError());
+
+    if(GetLastError() == ERROR_MORE_DATA) {
+        info_len = sizeof(*pid_list) + sizeof(ULONG_PTR);
+        pid_list = HeapReAlloc(GetProcessHeap(), 0, pid_list, info_len);
+        ret = pQueryInformationJobObject(JobObject, JobObjectBasicProcessIdList, pid_list, info_len, &ret_len);
+        ok(ret, "QueryInformationJobObject (%d)\n", GetLastError());
+        if(ret) {
+            ok(info_len == ret_len, "QueryInformationJobObject ret_len (%d) != info_len (%d)\n", ret_len, info_len);
+            expect_eq_d(2, pid_list->NumberOfAssignedProcesses);
+            expect_eq_d(2, pid_list->NumberOfProcessIdsInList);
+            expect_eq_d(pi[0].dwProcessId, pid_list->ProcessIdList[0]);
+            expect_eq_d(pi[1].dwProcessId, pid_list->ProcessIdList[1]);
+        }
+    }
+
+    TerminateProcess(pi[0].hProcess, 0);
+    TerminateProcess(pi[1].hProcess, 0);
+    winetest_wait_child_process(pi[0].hProcess);
+    winetest_wait_child_process(pi[1].hProcess);
+    CloseHandle(JobObject);
+}
+
+static void test_BreakawayOk(HANDLE JobObject) {
+    PROCESS_INFORMATION pi;
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit_info;
+    STARTUPINFOA si = {0};
+    char buffer[MAX_PATH];
+    BOOL ret;
+    BOOL out;
+
+    if(!pIsProcessInJob) {
+        win_skip("IsProcessInJob not available.\n");
+        return;
+    }
+
+    snprintf(buffer, MAX_PATH, "\"%s\" tests/process.c job \"%s\"", selfname, "exit");
+
+    ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si, &pi);
+    todo_wine ok(!ret, "Expected failure\n");
+    todo_wine expect_eq_d(ERROR_ACCESS_DENIED, GetLastError());
+
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL, &si, &pi);
+    ok(ret, "CreateProcess (%d)\n", GetLastError());
+
+    ret = pIsProcessInJob(pi.hProcess, JobObject, &out);
+    ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
+
+    winetest_wait_child_process(pi.hProcess);
+
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+    ok(ret, "CreateProcess (%d)\n", GetLastError());
+
+    ret = pIsProcessInJob(pi.hProcess, JobObject, &out);
+    ok(ret && !out, "IsProcessInJob: expected false (%d)\n", GetLastError());
+
+    winetest_wait_child_process(pi.hProcess);
+
+    /* unset breakaway ok */
+    limit_info.BasicLimitInformation.LimitFlags = 0;
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+}
+
+static void test_KillOnJobClose(void) {
+    HANDLE JobObject;
+    PROCESS_INFORMATION pi;
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit_info;
+    BOOL ret;
+
+    JobObject = pCreateJobObjectW(NULL, NULL);
+    ok(JobObject != NULL, "CreateJobObject (%d)\n", GetLastError());
+
+    limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    ret = pSetInformationJobObject(JobObject, JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info));
+    if(GetLastError() == ERROR_INVALID_PARAMETER) {
+        win_skip("Kill on job close limit not available\n");
+        return;
+    }
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    create_process("wait", &pi);
+    ret = pAssignProcessToJobObject(JobObject, pi.hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    CloseHandle(JobObject);
+    winetest_wait_child_process(pi.hProcess);
+}
+
+static HANDLE test_LimitActiveProcesses(void) {
+    HANDLE JobObject;
+    PROCESS_INFORMATION pi[2];
+    STARTUPINFOA si = {0};
+    JOBOBJECT_BASIC_LIMIT_INFORMATION limit_info;
+    DWORD exit_code;
+    BOOL ret;
+    char buffer[MAX_PATH];
+
+    snprintf(buffer, MAX_PATH, "\"%s\" tests/process.c job \"%s\"", selfname, "exit");
+
+    JobObject = pCreateJobObjectW(NULL, NULL);
+    ok(JobObject != NULL, "CreateJobObject (%d)\n", GetLastError());
+
+    limit_info.LimitFlags = JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+    limit_info.ActiveProcessLimit = 1;
+    ret = pSetInformationJobObject(JobObject, JobObjectBasicLimitInformation, &limit_info, sizeof(limit_info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    create_process("exit", &pi[0]);
+    /* Only active processes count toward the limit */
+    winetest_wait_child_process(pi[0].hProcess);
+
+    create_process("wait", &pi[0]);
+    create_process("wait", &pi[1]);
+
+    ret = pAssignProcessToJobObject(JobObject, pi[0].hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    ret = pAssignProcessToJobObject(JobObject, pi[1].hProcess);
+    todo_wine ok(!ret, "AssignProcessToJobObject expected failure\n");
+    todo_wine expect_eq_d(ERROR_NOT_ENOUGH_QUOTA, GetLastError());
+
+    if (0) {
+        /* Fails randomly on 2000 and xp */
+        WaitForSingleObject(pi[1].hProcess, 30000);
+        ret = GetExitCodeProcess(pi[1].hProcess, &exit_code);
+        ok(ret, "GetExitCodeProcess (%d)\n", GetLastError());
+        expect_eq_d(ERROR_NOT_ENOUGH_QUOTA, exit_code);
+    }
+    /* FIXME: how to check for failure?
+     * AssignProcessToJobObject should terminate a process if adding it
+     * exceeds the active process limit */
+    TerminateProcess(pi[1].hProcess, 0);
+    WaitForSingleObject(pi[1].hProcess, 30000);
+
+    limit_info.LimitFlags = JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+    limit_info.ActiveProcessLimit = 2;
+    ret = pSetInformationJobObject(JobObject, JobObjectBasicLimitInformation, &limit_info, sizeof(limit_info));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    ret = pAssignProcessToJobObject(JobObject, GetCurrentProcess());
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    ret = CreateProcessA(NULL, buffer, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi[1]);
+    todo_wine ok(!ret, "Expected failure\n");
+    todo_wine expect_eq_d(ERROR_NOT_ENOUGH_QUOTA, GetLastError());
+
+    TerminateProcess(pi[1].hProcess, 0);
+    WaitForSingleObject(pi[1].hProcess, 30000);
+    TerminateProcess(pi[0].hProcess, 0);
+    winetest_wait_child_process(pi[0].hProcess);
+
+    return JobObject;
+}
+
+static void test_CompletionPort(void) {
+    HANDLE JobObject;
+    HANDLE IOPort;
+    PROCESS_INFORMATION pi;
+    JOBOBJECT_ASSOCIATE_COMPLETION_PORT Port;
+    BOOL ret;
+
+    JobObject = pCreateJobObjectW(NULL, NULL);
+    ok(JobObject != NULL, "CreateJobObject (%d)\n", GetLastError());
+
+    IOPort = pCreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
+    ok(IOPort != NULL, "CreateIoCompletionPort (%d)\n", GetLastError());
+
+    Port.CompletionKey = JobObject;
+    Port.CompletionPort = IOPort;
+    ret = pSetInformationJobObject(JobObject, JobObjectAssociateCompletionPortInformation, &Port, sizeof(Port));
+    ok(ret, "SetInformationJobObject (%d)\n", GetLastError());
+
+    create_process("wait", &pi);
+    ret = pAssignProcessToJobObject(JobObject, pi.hProcess);
+    ok(ret, "AssignProcessToJobObject (%d)\n", GetLastError());
+
+    TerminateProcess(pi.hProcess, 0);
+    winetest_wait_child_process(pi.hProcess);
+
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_NEW_PROCESS,         JobObject, pi.dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_EXIT_PROCESS,        JobObject, pi.dwProcessId, 0);
+    todo_wine test_job_completion(IOPort, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JobObject, 0, 100);
+}
+
+static void test_inherit(HANDLE JobObject) {
+    PROCESS_INFORMATION pi;
+    BOOL ret;
+    BOOL out;
+
+    if(!pIsProcessInJob) {
+        win_skip("IsProcessInJob not available.\n");
+        return;
+    }
+
+    create_process("exit", &pi);
+    /* Only active processes are returned */
+    winetest_wait_child_process(pi.hProcess);
+
+    ret = pIsProcessInJob(pi.hProcess, JobObject, &out);
+    todo_wine ok(ret && out, "IsProcessInJob: expected true (%d)\n", GetLastError());
+}
+
+static void doJobChild(void)
+{
+    if(strcmp("wait", myARGV[3]) == 0) {
+        Sleep(3000);
+        winetest_set_location(myARGV[4], atoi(myARGV[5]));
+        todo_wine winetest_ok(0, "Child process not killed\n");
+        return;
+    }
+
+    if(strcmp("exit", myARGV[3]) == 0)
+        return;
+
+    ok(0, "Unknown argument %s\n", myARGV[2]);
 }
 
 START_TEST(process)
 {
     BOOL b = init();
+    HANDLE JobObject;
     ok(b, "Basic init of CreateProcess test\n");
     if (!b) return;
 
     if (myARGC >= 3)
     {
-        doChild(myARGV[2], (myARGC == 3) ? NULL : myARGV[3]);
+        if(strcmp(myARGV[2], "job") == 0)
+            doJobChild();
+        else
+            doChild(myARGV[2], (myARGC == 3) ? NULL : myARGV[3]);
         return;
     }
+
     test_TerminateProcess();
     test_Startup();
     test_CommandLine();
@@ -2204,4 +2567,18 @@ START_TEST(process)
      *  handles:        check the handle inheritance stuff (+sec options)
      *  console:        check if console creation parameters work
      */
+
+    if(!pCreateJobObjectW) {
+        win_skip("No job object support\n");
+        return;
+    }
+    test_IsProcessInJob();
+    test_TerminateJobObject();
+    test_ProccessIdList();
+    test_CompletionPort();
+    test_KillOnJobClose();
+    /* The following test adds this process to a job object */
+    JobObject = test_LimitActiveProcesses();
+    test_BreakawayOk(JobObject);
+    test_inherit(JobObject);
 }
