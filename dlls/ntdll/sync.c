@@ -634,8 +634,51 @@ NTSTATUS WINAPI NtQueryInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS c
  */
 NTSTATUS WINAPI NtSetInformationJobObject( HANDLE handle, JOBOBJECTINFOCLASS class, PVOID info, ULONG len )
 {
-    FIXME( "stub: %p %u %p %u\n", handle, class, info, len );
-    return STATUS_SUCCESS;
+    JOBOBJECT_BASIC_LIMIT_INFORMATION *basic_limit;
+    NTSTATUS status = STATUS_SUCCESS;
+
+    TRACE( "(%p, %u, %p, %u)\n", handle, class, info, len );
+
+    if (class >= MaxJobObjectInfoClass)
+        return STATUS_INVALID_PARAMETER;
+
+    switch (class)
+    {
+
+    case JobObjectExtendedLimitInformation:
+        if (len != sizeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION))
+            return STATUS_INVALID_PARAMETER;
+
+        basic_limit = &(((JOBOBJECT_EXTENDED_LIMIT_INFORMATION *)info)->BasicLimitInformation);
+        if (basic_limit->LimitFlags & ~JOB_OBJECT_EXTENDED_LIMIT_VALID_FLAGS)
+            return STATUS_INVALID_PARAMETER;
+
+        goto set_basic_limits;
+
+    case JobObjectBasicLimitInformation:
+        if (len != sizeof(JOBOBJECT_BASIC_LIMIT_INFORMATION))
+            return STATUS_INVALID_PARAMETER;
+
+        basic_limit = info;
+        if (basic_limit->LimitFlags & ~JOB_OBJECT_BASIC_LIMIT_VALID_FLAGS)
+            return STATUS_INVALID_PARAMETER;
+
+    set_basic_limits:
+        SERVER_START_REQ( set_job_limits )
+        {
+            req->handle = wine_server_obj_handle( handle );
+            req->limit_flags = basic_limit->LimitFlags;
+            status = wine_server_call( req );
+        }
+        SERVER_END_REQ;
+        break;
+
+    default:
+        FIXME( "stub: %p %u %p %u\n", handle, class, info, len );
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    return status;
 }
 
 /******************************************************************************
