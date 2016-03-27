@@ -1,6 +1,7 @@
 /*
  * Copyright 2001, Ove Kåven, TransGaming Technologies Inc.
  * Copyright 2002 Greg Turner
+ * Copyright 2016 Andrew Cook
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -31,11 +32,6 @@
  *
  * ---- KNOWN BUGS / TODO:
  *
- *   o Service hooks are unimplemented (if you bother to implement
- *     these, also implement net.exe, at least for "net start" and
- *     "net stop" (should be pretty easy I guess, assuming the rest
- *     of the services API infrastructure works.
- *
  *   o There is a looming problem regarding listening on privileged
  *     ports.  We will need to be able to coexist with SAMBA, and be able
  *     to function without running winelib code as root.  This may
@@ -50,6 +46,7 @@
 
 #include "windef.h"
 #include "winbase.h"
+#include "winsvc.h"
 #include "winnt.h"
 #include "irot.h"
 #include "epm.h"
@@ -58,9 +55,11 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 
-static HANDLE exit_event;
+static HANDLE stop_event;
+static BOOL service;
 
-extern HANDLE CDECL __wine_make_process_system(void);
+static WCHAR rpcssW[] = {'r','p','c','s','s',0};
+static SERVICE_STATUS_HANDLE service_handle;
 
 static BOOL RPCSS_Initialize(void)
 {
@@ -103,8 +102,6 @@ static BOOL RPCSS_Initialize(void)
   if (status != RPC_S_OK)
     goto fail;
 
-  exit_event = __wine_make_process_system();
-
   return TRUE;
 
 fail:
@@ -121,23 +118,80 @@ static BOOL RPCSS_Shutdown(void)
   RpcServerUnregisterIf(epm_v3_0_s_ifspec, NULL, TRUE);
   RpcServerUnregisterIf(Irot_v0_2_s_ifspec, NULL, TRUE);
 
-  CloseHandle(exit_event);
-
   return TRUE;
 }
 
-int main( int argc, char **argv )
+static DWORD WINAPI service_handler( DWORD ctrl, DWORD event_type, LPVOID event_data, LPVOID context )
 {
-  /* 
-   * We are invoked as a standard executable; we act in a
-   * "lazy" manner.  We register our interfaces and endpoints, and hang around
-   * until we all user processes exit, and then silently terminate.
-   */
+    SERVICE_STATUS status;
 
-  if (RPCSS_Initialize()) {
-    WaitForSingleObject(exit_event, INFINITE);
+    status.dwServiceType             = SERVICE_WIN32;
+    status.dwControlsAccepted        = SERVICE_ACCEPT_STOP;
+    status.dwWin32ExitCode           = 0;
+    status.dwServiceSpecificExitCode = 0;
+    status.dwCheckPoint              = 0;
+    status.dwWaitHint                = 0;
+
+    switch(ctrl)
+    {
+    case SERVICE_CONTROL_STOP:
+    case SERVICE_CONTROL_SHUTDOWN:
+        WINE_TRACE( "shutting down\n" );
+        status.dwCurrentState     = SERVICE_STOP_PENDING;
+        status.dwControlsAccepted = 0;
+        SetServiceStatus( service_handle, &status );
+        SetEvent( stop_event );
+        return NO_ERROR;
+    default:
+        WINE_FIXME( "got service ctrl %x\n", ctrl );
+        status.dwCurrentState = SERVICE_RUNNING;
+        SetServiceStatus( service_handle, &status );
+        return NO_ERROR;
+    }
+}
+
+static void WINAPI ServiceMain( DWORD argc, LPWSTR *argv )
+{
+    SERVICE_STATUS status;
+
+    WINE_TRACE( "starting service\n" );
+
+    stop_event = CreateEventW( NULL, TRUE, FALSE, NULL );
+
+    service_handle = RegisterServiceCtrlHandlerExW( rpcssW, service_handler, NULL );
+    if (!service_handle)
+        return;
+
+    if(!RPCSS_Initialize())
+        return;
+
+    status.dwServiceType             = SERVICE_WIN32;
+    status.dwCurrentState            = SERVICE_RUNNING;
+    status.dwControlsAccepted        = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
+    status.dwWin32ExitCode           = 0;
+    status.dwServiceSpecificExitCode = 0;
+    status.dwCheckPoint              = 0;
+    status.dwWaitHint                = 10000;
+    SetServiceStatus( service_handle, &status );
+
+    WaitForSingleObject( stop_event, INFINITE );
+
     RPCSS_Shutdown();
-  }
 
-  return 0;
+    status.dwCurrentState     = SERVICE_STOPPED;
+    status.dwControlsAccepted = 0;
+    SetServiceStatus( service_handle, &status );
+    WINE_TRACE( "service stopped\n" );
+}
+
+int main( int argc, WCHAR *argv[] )
+{
+    static const SERVICE_TABLE_ENTRYW service_table[] =
+    {
+        { rpcssW, ServiceMain },
+        { NULL, NULL }
+    };
+
+    StartServiceCtrlDispatcherW( service_table );
+    return 0;
 }

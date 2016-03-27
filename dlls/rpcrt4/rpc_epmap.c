@@ -25,6 +25,7 @@
 #include "windef.h"
 #include "winbase.h"
 #include "winerror.h"
+#include "winsvc.h"
 
 #include "rpc.h"
 
@@ -74,36 +75,6 @@ static const struct epm_endpoints
     { "ncalrpc", "epmapper" },
     { "ncacn_http", "593" },
 };
-
-static BOOL start_rpcss(void)
-{
-    PROCESS_INFORMATION pi;
-    STARTUPINFOW si;
-    WCHAR cmd[MAX_PATH];
-    static const WCHAR rpcss[] = {'\\','r','p','c','s','s','.','e','x','e',0};
-    BOOL rslt;
-    void *redir;
-
-    TRACE("\n");
-
-    ZeroMemory(&si, sizeof(STARTUPINFOA));
-    si.cb = sizeof(STARTUPINFOA);
-    GetSystemDirectoryW( cmd, MAX_PATH - sizeof(rpcss)/sizeof(WCHAR) );
-    lstrcatW( cmd, rpcss );
-
-    Wow64DisableWow64FsRedirection( &redir );
-    rslt = CreateProcessW( cmd, cmd, NULL, NULL, FALSE, DETACHED_PROCESS, NULL, NULL, &si, &pi );
-    Wow64RevertWow64FsRedirection( redir );
-
-    if (rslt)
-    {
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        Sleep(100);
-    }
-
-    return rslt;
-}
 
 static inline BOOL is_epm_destination_local(RPC_BINDING_HANDLE handle)
 {
@@ -231,29 +202,19 @@ static RPC_STATUS epm_register( RPC_IF_HANDLE IfSpec, RPC_BINDING_VECTOR *Bindin
 
   if (status == RPC_S_OK)
   {
-      while (TRUE)
+      __TRY
       {
-          __TRY
-          {
-              ept_insert(handle, BindingVector->Count * (UuidVector ? UuidVector->Count : 1),
-                         entries, replace, &status2);
-          }
-          __EXCEPT(rpc_filter)
-          {
-              status2 = GetExceptionCode();
-          }
-          __ENDTRY
-          if (status2 == RPC_S_SERVER_UNAVAILABLE &&
-              is_epm_destination_local(handle))
-          {
-              if (start_rpcss())
-                  continue;
-          }
-          if (status2 != RPC_S_OK)
-              ERR("ept_insert failed with error %d\n", status2);
-          status = status2; /* FIXME: convert status? */
-          break;
+          ept_insert(handle, BindingVector->Count * (UuidVector ? UuidVector->Count : 1),
+                     entries, replace, &status2);
       }
+      __EXCEPT(rpc_filter)
+      {
+          status2 = GetExceptionCode();
+      }
+      __ENDTRY
+      if (status2 != RPC_S_OK)
+          ERR("ept_insert failed with error %d\n", status2);
+      status = status2; /* FIXME: convert status? */
   }
   RpcBindingFree(&handle);
 
@@ -444,26 +405,16 @@ RPC_STATUS WINAPI RpcEpResolveBinding( RPC_BINDING_HANDLE Binding, RPC_IF_HANDLE
       return status;
   }
 
-  while (TRUE)
+  __TRY
   {
-    __TRY
-    {
-      ept_map(handle, &uuid, tower, &entry_handle, sizeof(towers)/sizeof(towers[0]), &num_towers, towers, &status2);
-      /* FIXME: translate status2? */
-    }
-    __EXCEPT(rpc_filter)
-    {
-      status2 = GetExceptionCode();
-    }
-    __ENDTRY
-    if (status2 == RPC_S_SERVER_UNAVAILABLE &&
-        is_epm_destination_local(handle))
-    {
-      if (start_rpcss())
-        continue;
-    }
-    break;
-  };
+    ept_map(handle, &uuid, tower, &entry_handle, sizeof(towers)/sizeof(towers[0]), &num_towers, towers, &status2);
+    /* FIXME: translate status2? */
+  }
+  __EXCEPT(rpc_filter)
+  {
+    status2 = GetExceptionCode();
+  }
+  __ENDTRY
 
   RpcBindingFree(&handle);
   I_RpcFree(tower);
